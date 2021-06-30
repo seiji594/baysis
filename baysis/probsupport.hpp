@@ -10,7 +10,6 @@
 #define BAYSIS_PROBSUPPORT_HPP
 
 #include <random>
-#include <vector>
 #include <cmath>
 #include <unsupported/Eigen/SpecialFunctions>
 #include "baysisexception.hpp"
@@ -129,6 +128,7 @@ struct GARsampler {
 class NormalDist {
 public:
     typedef std::normal_distribution<> Dist_type;
+    typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     /**
      * Returns log density of normal distribution given the datapoint x; constants are ignored
      * @param x - a normal variable
@@ -152,7 +152,7 @@ public:
                              const Eigen::MatrixBase<DerivedC>& L) {
         // TODO: check size conformance
         Vector stzd;
-        stzd = L.template triangularView<Eigen::Lower>().solve(x - mu); // L.inverse() * (x - mu);
+        stzd = L.inverse() * (x - mu);  // <-- apparently this is faster; L.template triangularView<Eigen::Lower>().solve(x - mu);
         double sqstv = pow(stzd.array(), 2).sum();
         double log_det = log(L.diagonal().array()).sum();
         return -log_det - 0.5 * sqstv;
@@ -163,7 +163,7 @@ public:
      * @param mu, sigma - parameters of normal distribution
      * @return value of loglikelihood
      */
-    static double logLikelihood(const Eigen::Ref<Vector>& data, const double mu, const double sigma) {
+    static double logLikelihood(const Eigen::Ref<Sample_type>& data, const double mu, const double sigma) {
         // FIXME: check param for correctness
         double retval(0);
         size_t n = data.size();
@@ -180,9 +180,9 @@ public:
      * @return vector of variates
      */
     template<typename RNG>
-    static Vector sample(std::size_t n, const double mu, const double sigma, RandomSample<RNG, Dist_type>& rsg) {
+    static Sample_type sample(std::size_t n, const double mu, const double sigma, RandomSample<RNG, Dist_type>& rsg) {
         //FIXME: check params for correctness
-        Vector z(rsg.draw(n));
+        Sample_type z(rsg.draw(n));
         return (sigma * z).array() + mu;
     }
     /**
@@ -193,9 +193,9 @@ public:
      * @return a multivariate normal variable
      */
     template<typename DerivedA, typename DerivedB, typename RNG>
-    static Vector sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::MatrixBase<DerivedB>& L,
+    static Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::MatrixBase<DerivedB>& L,
                          RandomSample<RNG, Dist_type>& rsg) {
-        Vector z(rsg.draw(mu.size()));
+        Sample_type z(rsg.draw(mu.size()));
         return mu + L * z;
     }
 };
@@ -207,6 +207,7 @@ public:
 class PoissonDist {
 public:
     typedef std::poisson_distribution<> Dist_type;
+    typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     /**
      * Returns log density of poisson distribution given the datapoint x; constants are ignored
      * @param x - a poisson variable
@@ -241,7 +242,7 @@ public:
      * @param lambda - parameter of poisson distribution
      * @return value of loglikelihood
      */
-    static double logLikelihood(const Eigen::Ref<Vector_int>& data, const double lambda) {
+    static double logLikelihood(const Eigen::Ref<Sample_type>& data, const double lambda) {
         //FIXME: check param for correctness
         double sumlfact((data.cast<double>().array() + 1).lgamma().sum());
         double sumx(data.cast<double>().sum());
@@ -255,7 +256,7 @@ public:
      * @return vector of variates
      */
     template<typename RNG>
-    static Vector_int sample(std::size_t n, RandomSample<RNG, Dist_type>& rsg) {
+    static Sample_type sample(std::size_t n, RandomSample<RNG, Dist_type>& rsg) {
         return rsg.draw(n);
     }
     /**
@@ -265,10 +266,10 @@ public:
      * @return a multivariate normal variable
      */
     template<typename RNG, typename Derived>
-    static Vector_int sample(const Eigen::DenseBase<Derived>& lambda, RandomSample<RNG, Dist_type>& rsg) {
+    static Sample_type sample(const Eigen::DenseBase<Derived>& lambda, RandomSample<RNG, Dist_type>& rsg) {
         //FIXME: check params for correctness
         using Param_type = typename RandomSample<RNG, Dist_type>::Param_type;
-        Vector_int z(lambda.size());
+        Sample_type z(lambda.size());
         for (int i = 0; i < lambda.size(); ++i) {
             Param_type params(lambda(i));
             z(i) = rsg.draw(params);

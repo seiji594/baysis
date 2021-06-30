@@ -10,13 +10,12 @@
 #ifndef BAYSIS_MATSUPPORT_HPP
 #define BAYSIS_MATSUPPORT_HPP
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 
 typedef Eigen::MatrixXd Matrix;
 typedef Eigen::VectorXd Vector;
 typedef Eigen::VectorXi Vector_int;
-typedef Eigen::ArrayXd Array;
 
 /** Minimum allowable reciprocal condition number for PD Matrix factorisations
  * Initialised default gives 5 decimal digits of headroom */
@@ -25,7 +24,7 @@ constexpr double LIMIT_PD_INIT = std::numeric_limits<double>::epsilon() * double
 
 /**
  * Numerical comparison of reciprocal condition numbers
- *  Required for all linear algebra in models and filters
+ *  Required for all linear algebra in models, filters and samplers
  *  Implements minimum allowable reciprocal condition number for PD Matrix factorisations
  * From Bayes++ the Bayesian Filtering Library
  * Copyright (c) 2002 Michael Stevens
@@ -54,6 +53,23 @@ public:
     void checkPD(double rcond, const char* error_description) const {
         if (rcond < limit_pd)
             throw NumericException(error_description);
+    }
+
+    /**
+     * Checks if the matrix is symmetric
+     */
+     static bool isSymmetric(const Eigen::Ref<Matrix>& M) {
+        return M.template isApprox(M.transpose());
+     }
+
+    static bool isPSD(const Eigen::Ref<Matrix>& M) {
+        return isSymmetric(M) && M.ldlt().isPositive();
+    }
+
+    static bool isPD(const Eigen::Ref<Matrix>& M) {
+        if (M.llt().info() == Eigen::NumericalIssue)
+            return false;
+        return isSymmetric(M);
     }
 private:
     double limit_pd;
