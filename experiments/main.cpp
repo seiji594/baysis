@@ -61,7 +61,7 @@ int main(int argc, const char * argv[]) {
     cout << "A sample of 5 i.i.d. poisson distributed variables Poi(3.4):\n" << pois_sample << endl;
     cout << "loglikelihood of the sample:\n" << PoissonDist::logLikelihood(pois_sample, 3.4) << endl;
 */
-
+/*
     Matrix A(128,128), L(128, 128), eye(Matrix::Identity(128, 128));
     L.setRandom();
     A = L * L.transpose();
@@ -80,5 +80,8 @@ int main(int argc, const char * argv[]) {
     std::cout << "To calc inverse with llt = " << chrono::duration_cast<chrono::microseconds>(t3-t2).count() << std::endl;
     std::cout << "To calc inverse directly = " << chrono::duration_cast<chrono::microseconds>(t4-t3).count() << std::endl;
     std::cout << A.inverse().isApprox(ltri.transpose()*ltri);
+*/
+
+
     return 0;
 }

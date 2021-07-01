@@ -11,12 +11,7 @@
 
 namespace ssm {
 
-    GaussianNoiseTransition::GaussianNoiseTransition(std::size_t x_size):
-            Q(x_size, x_size) {};
 
-    LinearGaussianTransition::LinearGaussianTransition(std::size_t x_size):
-            GaussianNoiseTransition(x_size),
-            A(x_size, x_size) {};
 
 }
 
