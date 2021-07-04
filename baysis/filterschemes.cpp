@@ -11,63 +11,66 @@
 
 
 namespace schemes {
-//FIXME: return all models attributes via getters
-    FilterBase::FilterBase(std::size_t x_size) :
-            last_y_size(0) {
+
+    LinearStateBase::LinearStateBase(std::size_t x_size) {
         if (x_size < 1)
             throw LogicException("zero size state");
         X = Matrix(x_size, x_size);
         x = Vector(x_size);
-        temp_X = Matrix(x_size, x_size);
     }
 
-    void FilterBase::init(const Vector &x_init, const Matrix &X_init) {
+    void LinearStateBase::init(const Vector &x_init, const Matrix &X_init) {
         x = x_init;
         X = X_init;
         if (!NumericalRcond::isPSD(X))
             throw NumericException("Initialised state covariance not PSD");
     }
 
-    void FilterBase::predict(LGtransition &lgsm) {
-        x = lgsm.g(x);
 
-        Check_Result(X, "In filter predict step. Old covariance: ");
-        temp_X.noalias() = (lgsm.A * X).transpose();
-        X.noalias() = lgsm.A * temp_X + lgsm.getQ();
-        Check_Result(X, "New covariance:");
+    FilterBase::FilterBase(std::size_t x_size) :
+            LinearStateBase(x_size), last_y_size(0) {
+        temp_X = Matrix(x_size, x_size);
+    }
+
+    void FilterBase::predict(LGTransition &lgsm) {
+        x = lgsm.stateMean(x);
+
+        temp_X.noalias() = (lgsm.getA() * X).transpose();
+        X = lgsm.getA() * temp_X + lgsm.getCov();
+//        Check_Result(X, "In filter predict step. New covariance:");
     }
 
 
     CovarianceScheme::CovarianceScheme(std::size_t x_size, std::size_t y_initsize) :
-            FilterBase(x_size) {
+            LinearStateBase(x_size), FilterBase(x_size) {
         observe_size(y_initsize);
     }
 
-    void CovarianceScheme::observe(LGobserve &lgobsm, const Ref<Vector> &y) {
-        Vector r = y - lgobsm.h(x);        // Observation model, innovation;
+    void CovarianceScheme::observe(LGObservation &lgobsm, const Ref<Vector> &y) {
+        Vector r = y - lgobsm.obsMean(x);        // Observation model, innovation;
         return update(lgobsm, r);
     }
 
-    void CovarianceScheme::update(LGobserve &lgobsm, const Vector &r) {
-        if (r.size() != lgobsm.R.rows())
+    void CovarianceScheme::update(LGObservation &lgobsm, const Vector &r) {
+        if (r.size() != lgobsm.getCov().rows())
             throw LogicException("Observation and model sizes inconsistent");
         observe_size(r.size()); // Dynamic sizing
 
         // Innovation covariance
-        Matrix tempXY(X * lgobsm.C.transpose());
-        S.noalias() = lgobsm.C * tempXY + lgobsm.R;
-        Check_Result(S, "In filter update step. Innovation covariance: ");
+        Matrix tempXY(X * lgobsm.getC().transpose());
+        S = lgobsm.getC() * tempXY + lgobsm.getCov();
+//        Check_Result(S, "In filter update step. Innovation covariance: ");
         rclimit.checkPD(S.llt().rcond(), "In filter update step. Innovation covariance not PD.");
 
         // Kalman gain
         K.noalias() = tempXY * S.inverse();
-        Check_Result(K, "In filter update step. Kalman gain: ")
+//        Check_Result(K, "In filter update step. Kalman gain: ");
 
         // State update
         x.noalias() += K * r;
-        X -= K * lgobsm.C * X;
-        Check_Result(x, "In filter update step. New state: ")
-        Check_Result(X, "In filter update step. New state covariance: ");
+        X -= K * lgobsm.getC() * X;
+//        Check_Result(x, "In filter update step. New state: ");
+//        Check_Result(X, "In filter update step. New state covariance: ");
     }
 
     void CovarianceScheme::observe_size(std::size_t y_size) {
@@ -80,60 +83,55 @@ namespace schemes {
 
 
     InformationScheme::InformationScheme(std::size_t x_size, std::size_t z_initsize) :
-            FilterBase(x_size), e(x_size), La(x_size, x_size) {
+            LinearStateBase(x_size), FilterBase(x_size),
+            e(x_size), La(x_size, x_size) {
         observe_size(z_initsize);
-        transform_required = true;
     }
 
     void InformationScheme::init(const Vector &x_init, const Matrix &X_init) {
-        FilterBase::init(x_init, X_init);
+        LinearStateBase::init(x_init, X_init);
         La = X.inverse();
         e.noalias() = La * x;
-        transform_required = false;
     }
 
     void InformationScheme::initInformation(const Vector &eta, const Matrix &Lambda) {
         e = eta;
         La = Lambda;
-        if (!NumericalRcond::isPSD(Y))
-            throw NumericException("Initial information matrix not PSD"));
-        transform_required = true;
+        if (!NumericalRcond::isPSD(La))
+            throw NumericException("Initial information matrix not PSD");
+        transform();
     }
 
-    void InformationScheme::predict(LGtransition &lgsm) {
-        transform();
+    void InformationScheme::predict(LGTransition &lgsm) {
         FilterBase::predict(lgsm);
         // Information
-        rclimit.checkPD(X.llt().rcond(), "In filter predict step. Covariance matrix is not PD")
+        rclimit.checkPD(X.llt().rcond(), "In filter predict step. Covariance matrix is not PD");
         La = X.inverse();
         e.noalias() = La * x;
     }
 
-    void InformationScheme::observe(LGobserve &lgobsm, const Ref<Vector> &y) {
+    void InformationScheme::observe(LGObservation &lgobsm, const Ref<Vector> &y) {
         update(lgobsm, y);
     }
 
-    void InformationScheme::update(LGobserve &lgobsm, const Vector &r) {
-        if (r.size() != lgobsm.R.rows())
+    void InformationScheme::update(LGObservation &lgobsm, const Vector &r) {
+        if (r.size() != lgobsm.getCov().rows())
             throw LogicException("Observation and model sizes inconsistent");
         observe_size(r.size()); // Dynamic sizing
 
         // Observation information
-        rclimit.checkPD(lgobsm.R.llt().rcond(), "In filter update step. Observation noise covariance not PD.");
-        R_inv = lgobsm.R.inverse(); // FIXME: return R via getter
-        Matrix CtRi(lgobsm.C.transpose() * R_inv);
+        R_inv = lgobsm.getCov().inverse();
+        Matrix CtRi(lgobsm.getC().transpose() * R_inv);
         e.noalias() += CtRi * r;
-        La.noalias() += CtRi * lgobsm.C;
-        transform_required = true;
+        La.noalias() += CtRi * lgobsm.getC();
+        transform();
     }
 
     void InformationScheme::transform() {
-        if (transform_required) {
-            rclimit.checkPD(La.llt().rcond(), "In filter transform. Information matrix is not PD")
-            X = La.inverse();
-            x.noalias() = X * e;
-            transform_required = false;
-        }
+        rclimit.checkPD(La.llt().rcond(),
+                        "In filter transform. Information matrix is not PD");
+        X = La.inverse();
+        x.noalias() = X * e;
     }
 
     void InformationScheme::observe_size(std::size_t y_size) {
@@ -145,46 +143,40 @@ namespace schemes {
 
 
     SmootherBase::SmootherBase(std::size_t x_size) :
-            X(x_size, x_size), x(x_size) {}
-
-    void SmootherBase::init(const Vector &x_final, const Matrix &X_final) {
-        x = x_final;
-        X = X_final;
-        if (!NumericalRcond::isPSD(X))
-            throw NumericException("Initialised state covariance not PSD");
-    }
+            LinearStateBase(x_size) {}
 
 
-    RtsScheme::RtsScheme(size_t x_size) : SmootherBase(x_size), J(x_size, x_size) {}
+    RtsScheme::RtsScheme(size_t x_size) :
+            LinearStateBase(x_size), SmootherBase(x_size), J(x_size, x_size) {}
 
-    void
-    RtsScheme::updateBack(const LGtransition &lgsm,
-                          const Vector &filtered_xprior, const Vector &filtered_xpost,
-                          const Matrix &filtered_Xprior, const Matrix &filtered_Xpost) {
+    void RtsScheme::updateBack(const LGTransition &lgsm,
+                               const Vector &filtered_xprior, const Vector &filtered_xpost,
+                               const Matrix &filtered_Xprior, const Matrix &filtered_Xpost) {
         // Assume the filtered covariances already checked for PD in the filter
-        Check_Result(J, "In update back step. The current backwards Kalman gain: ");
-        J.noalias() = filtered_Xpost * lgsm.A.transpose() * filtered_Xprior.inverse();
-        Check_Result(J, "In update back step. The new backwards Kalman gain: ");
+//        Check_Result(J, "In update back step. The current backwards Kalman gain: ");
+        J.noalias() = filtered_Xpost * lgsm.getA().transpose() * filtered_Xprior.inverse();
+//        Check_Result(J, "In update back step. The new backwards Kalman gain: ");
 
-        Check_Result(X, "In update back step. The current state covariance:");
+//        Check_Result(X, "In update back step. The current state covariance:");
         X = filtered_Xpost + J * (X - filtered_Xprior) * J.transpose();
-        Check_Result(X, "In update back step. The new state covariance:");
+//        Check_Result(X, "In update back step. The new state covariance:");
 
-        Check_Result(x, "In update back step. The current state:");
+//        Check_Result(x, "In update back step. The current state:");
         x = filtered_xpost + J * (x - filtered_xprior);
-        Check_Result(x, "In update back step. The new state:");
+//        Check_Result(x, "In update back step. The new state:");
     }
 
 
     TwoWayScheme::TwoWayScheme(size_t x_size) :
-            SmootherBase(x_size),
+            LinearStateBase(x_size), SmootherBase(x_size),
+            last_y_size(0),
             Tau(x_size, x_size), theta(x_size),
-            temp_D(x_size, x_size), I(x_size, x_size) {}
+            temp_D(x_size, x_size), I(Matrix::Identity(x_size, x_size)) {}
 
-    void TwoWayScheme::initInformation(LGobserve &lgobsm, const Ref<Vector> &y_final,
+    void TwoWayScheme::initInformation(LGObservation &lgobsm, const Ref<Vector> &y_final,
                                        const Vector &x_final, const Matrix &X_final) {
-        Matrix temp(lgobsm.C * lgobsm.R.inverse());
-        Tau.noalias() = temp * lgobsm.C;
+        Matrix temp(lgobsm.getC().transpose() * lgobsm.getCov().inverse());
+        Tau.noalias() = temp * lgobsm.getC();
         theta.noalias() = temp * y_final;
         observe_size(y_final.size());
         init(x_final, X_final);
@@ -197,26 +189,21 @@ namespace schemes {
         }
     }
 
-    void TwoWayScheme::predictBack(LGtransition &lgsm) {
-        Eigen::LLT<Matrix> Qllt(lgsm.Q);
-        rclimit.checkPD(Qllt.rcond(), "In filter update back step. State noise covariance not PD.");
-        Matrix Theta(Qllt.matrixL());
-        temp_D.noalias() = Theta * (I + Theta.transpose() * Tau * Theta).inverse() * Theta.transpose();
-        theta = lgsm.B.transpose() * (I - Tau * temp_D) * theta;
-        Tau = lgsm.B.transpose() * Tau * (I - temp_D * Tau) * lgsm.B;
+    void TwoWayScheme::predictBack(LGTransition &lgsm) {
+        Matrix Theta(lgsm.getL().matrixL());
+        temp_D = Theta * (I + Theta.transpose() * Tau * Theta).inverse() * Theta.transpose();
+        theta = lgsm.getA().transpose() * (I - Tau * temp_D) * theta;
+        Tau = lgsm.getA().transpose() * Tau * (I - temp_D * Tau) * lgsm.getA();
     }
 
-    void TwoWayScheme::updateBack(LGobserve &lgobsm, const Ref<Vector> &y,
+    void TwoWayScheme::updateBack(LGObservation &lgobsm, const Ref<Vector> &y,
                                   const Vector &filtered_xprior, const Matrix &filtered_Xprior) {
         observe_size(y.size());
-        rclimit.checkPD(lgobsm.R.llt().rcond(), "In filter update back step. Observation noise covariance not PD.");
-        temp_Y.noalias() = lgobsm.C.transpose() * lgobsm.R.inverse();
-        Tau.noalias() += temp_Y * lgobsm.C;
+        temp_Y.noalias() = lgobsm.getC().transpose() * lgobsm.getCov().inverse();
+        Tau.noalias() += temp_Y * lgobsm.getC();
         theta.noalias() += temp_Y * y;
         temp_D = filtered_Xprior.inverse();
         X = (temp_D + Tau).inverse();
-        x.noalias() = X * (temp_D * filtered_xprior + theta);
+        x = X * (temp_D * filtered_xprior + theta);
     }
-
-
 }

@@ -9,14 +9,16 @@
 #include <iostream>
 #include <chrono>
 #include "../baysis/probsupport.hpp"
-//#include "../baysis/schemes.hpp"
+#include "../baysis/filterschemes.cpp"
 
 using namespace std;
+using namespace schemes;
 
 
 int main(int argc, const char * argv[]) {
-/*
+
     RandomSample<std::mt19937, std::normal_distribution<> > rsg{1};
+/*
     RandomSample<std::mt19937, std::poisson_distribution<> > rsg2{1};
     std::uniform_int_distribution<> randint(1,10);
     RandomSample<std::mt19937, std::uniform_int_distribution<> > rsg3{randint, 1};
@@ -31,16 +33,15 @@ int main(int argc, const char * argv[]) {
     Vector norm_sample(n);
     Vector means(n);
     means << 2.1, 2.8, 1.9;
-    Matrix cov(n, n), ltm(n, n);
+    Matrix cov(n, n);
     cov << 0.5, 0.25, 0.34, 0.25, 0.6, 0.36, 0.34, 0.36, 0.4;
     Eigen::LLT<Matrix> llt(static_cast<Eigen::Index>(n));
     llt.compute(cov);
     NumericalRcond().checkPD(llt.rcond(), "Matrix is not positive definite");
-    ltm = llt.matrixL();
-    norm_sample = NormalDist::sample(means, ltm, rsg);
+    norm_sample = NormalDist::sample(means, llt, rsg);
     cout << "A multivariate sample from normal distribution:\n" << norm_sample << endl;
-    cout << "Logdensity of the multivariate sample:\n" << NormalDist::logDensity(norm_sample, means, ltm) << endl;
-    cout << "Low triangular matrix of Cholesky decomposition:\n" << ltm << endl;
+    cout << "Logdensity of the multivariate sample:\n" << NormalDist::logDensity(norm_sample, means, llt) << endl;
+    cout << "Low triangular matrix of Cholesky decomposition:\n" << llt.matrixL().toDenseMatrix() << endl;
 
     norm_sample = NormalDist::sample(10, 3.4, 0.5, rsg);
     cout << "A sample of 10 i.i.d. normally distributed variables N(3.4, 0.5):\n" << norm_sample << endl;
@@ -62,7 +63,9 @@ int main(int argc, const char * argv[]) {
     cout << "loglikelihood of the sample:\n" << PoissonDist::logLikelihood(pois_sample, 3.4) << endl;
 */
 /*
-    Matrix A(128,128), L(128, 128), eye(Matrix::Identity(128, 128));
+    std::size_t n = 15;
+    Matrix A(n,n), L(n, n), eye(Matrix::Identity(n, n));
+    Matrix Ainv1(n, n), Ainv2(n, n);
     L.setRandom();
     A = L * L.transpose();
 
@@ -70,18 +73,163 @@ int main(int argc, const char * argv[]) {
     Eigen::LLT<Matrix> llt(A);
     auto t2 = chrono::high_resolution_clock::now();
     Matrix ltri(llt.matrixL());
-    ltri = ltri.inverse().eval();
-    std::cout << "Inversed matrix:\n" << ltri.transpose() * ltri << std::endl;
+    auto t2a = chrono::high_resolution_clock::now();
+    ltri = ltri.inverse();
+    Ainv1.noalias() = ltri.transpose() * ltri;
     auto t3 = chrono::high_resolution_clock::now();
-    std::cout << "Directly inversed matrix:\n" << A.inverse() << std::endl;
+    Ainv2 = A.inverse();
     auto t4 = chrono::high_resolution_clock::now();
+    Ainv2 = llt.solve(eye);
+    auto t5 = chrono::high_resolution_clock::now();
 
     std::cout << "To calc llt = " << chrono::duration_cast<chrono::microseconds>(t2-t1).count() << std::endl;
-    std::cout << "To calc inverse with llt = " << chrono::duration_cast<chrono::microseconds>(t3-t2).count() << std::endl;
+    std::cout << "To get low triangula matrix = " << chrono::duration_cast<chrono::microseconds>(t2a-t2).count() << std::endl;
+    std::cout << "To calc inverse with llt = " << chrono::duration_cast<chrono::microseconds>(t3-t2a).count() << std::endl;
     std::cout << "To calc inverse directly = " << chrono::duration_cast<chrono::microseconds>(t4-t3).count() << std::endl;
-    std::cout << A.inverse().isApprox(ltri.transpose()*ltri);
+    std::cout << "To calc inverse via solve = " << chrono::duration_cast<chrono::microseconds>(t5-t4).count() << std::endl;
+    std::cout << A.inverse().isApprox(Ainv1) << std::endl;
+    std::cout << A.inverse().isApprox(Ainv2) << std::endl;
+    std::cout << "A.inverse() = \n" << A.inverse() << std::endl;
+//    std::cout << "Ainv1 = \n" << Ainv1 << std::endl;
+//    std::cout << "Ainv2 = \n" << Ainv2 << std::endl;
+    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
+    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
 */
 
+    //! Kalman filter/smoother tests
+    // Set up the model
+    Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
+    double delta = 0.1;
+    A << 1., 0., delta, 0.,
+         0., 1., 0., delta,
+         0., 0., 1., 0.,
+         0., 0., 0., 1.;
+    C << 1., 0., 0., 0.,
+         0., 1., 0., 0.;
+    Q.setConstant(0.5);
+    Q += Matrix::Identity(4, 4) * 0.5;
+    R.setIdentity();
+
+    Matrix Sinit;
+    Vector minit(4);
+    minit << 1., 1., 0.5, 2.;
+
+    LGTransition transitionM(4);
+    LGObservation observationM(4, 2);
+
+    transitionM.init(A, Q);
+    observationM.init(C, R);
+
+    // Generate some data
+    Matrix data(2, 10);
+    Vector state = minit;
+    for (int i = 0; i < 10; ++i) {
+        state = transitionM.stateMean(state) + NormalDist::sample(Vector(4).setZero(), Q.llt(), rsg);
+        Vector obs = observationM.obsMean(state) + NormalDist::sample(Vector(2).setZero(), R.llt(), rsg);
+        data.col(i) = obs;
+    }
+
+    std::cout << "Observations:\n" << data << std::endl;
+
+    // Prior for state
+    Sinit.setIdentity(4, 4);
+    Sinit *= 1.e9; // <-- diffuse prior
+
+    // Initialize Kalman filter with covariance scheme
+    CovarianceScheme kf(4, 2);
+
+    kf.init(minit, Sinit);
+
+    Matrix state_means(4, 10);
+    Matrix state_mean_priors(4, 10);
+    Matrix state_covs(4, 4*10);
+    Matrix state_cov_priors(4, 4*10);
+
+    for (int i = 0; i < 10; ++i) {
+        if (i != 0) {
+            kf.predict(transitionM); // make prediction of the next state's mean and cov
+            state_mean_priors.col(i) = kf.x;
+            state_cov_priors.block(0, i * 4, 4, 4) = kf.X;
+        }
+        kf.observe(observationM, data.col(i));  // observe data and update the state statistics
+        // Saving results
+        state_means.col(i) = kf.x;
+        state_covs.block(0, i*4, 4, 4) = kf.X;
+    }
+
+    std::cout << "State means:\n" << state_means << std::endl;
+    std::cout << "State covs:\n" << state_covs << std::endl;
+
+    // Set up Kalman smoother using data calculated by the filter
+    RtsScheme rts(4);
+    rts.init(state_means.col(9), state_covs.block(0,4*9,4,4));
+
+    Matrix smoothed_means(4, 10);
+    Matrix smoothed_covs(4, 4*10);
+
+    for (int i = 8; i >= 0; --i) {
+        rts.updateBack(transitionM,
+                       state_mean_priors.col(i+1),
+                       state_means.col(i),
+                       state_cov_priors.block(0, 4 * (i+1), 4, 4),
+                       state_covs.block(0, 4 * i, 4, 4));
+        smoothed_means.col(i) = rts.x;
+        smoothed_covs.block(0,i*4,4,4) = rts.X;
+    }
+
+    std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
+    std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
+
+    // Set up information filter
+    InformationScheme inff(4, 2);
+    inff.init(minit, Sinit);
+
+    state_means.setZero();
+    state_mean_priors.setZero();
+    state_covs.setZero();
+    state_cov_priors.setZero();
+
+    state_mean_priors.col(0) = minit;
+    state_cov_priors.block(0, 0, 4, 4) = Sinit;
+
+    for (int i = 0; i < 10; ++i) {
+        if (i != 0) {
+            inff.predict(transitionM); // make prediction of the next state's mean and cov
+            state_mean_priors.col(i) = inff.x;
+            state_cov_priors.block(0, i * 4, 4, 4) = inff.X;
+        }
+        inff.observe(observationM, data.col(i));  // observe data and update the state statistics
+        // Saving results
+        state_means.col(i) = inff.x;
+        state_covs.block(0, i*4, 4, 4) = inff.X;
+    }
+
+    std::cout << "State means:\n" << state_means << std::endl;
+    std::cout << "State covs:\n" << state_covs << std::endl;
+
+    // Set up "two-way filter" smoother
+    TwoWayScheme two(4);
+    //FIXME: make the init API consistent between schemes (init may take obs model in all (but not necessarily use it)
+    // and obs model may have a handle to observations)
+    two.initInformation(observationM, data.col(9),
+                        state_means.col(9),
+                        state_covs.block(0,4*9,4,4));
+
+    smoothed_means.setZero();
+    smoothed_covs.setZero();
+
+    // FIXME: make the smoother API consistent : both should have either one or two functions per cycle
+    for (int i = 8; i >= 0; --i) {
+        two.predictBack(transitionM);
+        two.updateBack(observationM, data.col(i),
+                       state_mean_priors.col(i),
+                       state_cov_priors.block(0, 4*i, 4, 4));
+        smoothed_means.col(i) = two.x;
+        smoothed_covs.block(0,i*4,4,4) = two.X;
+    }
+
+    std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
+    std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
 
     return 0;
 }

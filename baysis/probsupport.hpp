@@ -149,12 +149,10 @@ public:
     template<typename DerivedA, typename DerivedB, typename DerivedC>
     static double logDensity(const Eigen::MatrixBase<DerivedA>& x,
                              const Eigen::MatrixBase<DerivedB>& mu,
-                             const Eigen::MatrixBase<DerivedC>& L) {
+                             const Eigen::LLT<DerivedC>& L) {
         // TODO: check size conformance
-        Vector stzd;
-        stzd = L.inverse() * (x - mu);  // <-- apparently this is faster; L.template triangularView<Eigen::Lower>().solve(x - mu);
-        double sqstv = pow(stzd.array(), 2).sum();
-        double log_det = log(L.diagonal().array()).sum();
+        double sqstv = L.template solve(x - mu).cwiseProduct(x - mu).sum();
+        double log_det = log(L.matrixL().toDenseMatrix().diagonal().array()).sum();
         return -log_det - 0.5 * sqstv;
     }
     /**
@@ -193,10 +191,10 @@ public:
      * @return a multivariate normal variable
      */
     template<typename DerivedA, typename DerivedB, typename RNG>
-    static Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::MatrixBase<DerivedB>& L,
+    static Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::LLT<DerivedB>& L,
                          RandomSample<RNG, Dist_type>& rsg) {
         Sample_type z(rsg.draw(mu.size()));
-        return mu + L * z;
+        return mu + L.matrixL() * z;
     }
 };
 
