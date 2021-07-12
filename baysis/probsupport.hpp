@@ -53,15 +53,9 @@ struct RandomSample {
     typedef typename Dist::param_type Param_type;
     typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
 
-    RandomSample(): rng(GenericPseudoRandom<RNG>::makeRnGenerator()) {}
-    RandomSample(u_long seed): rng(GenericPseudoRandom<RNG>::makeRnGenerator(seed)) {}
-    RandomSample(const Dist& d, u_long seed=0): dist(d.param()) {
-        if (seed == 0) {
-            rng = GenericPseudoRandom<RNG>::makeRnGenerator();
-        } else {
-            rng = GenericPseudoRandom<RNG>::makeRnGenerator(seed);
-        }
-    }
+    RandomSample(const std::shared_ptr<RNG>& rgen, const Dist& d): rng(rgen), dist(d.param()) { }
+    explicit RandomSample(const std::shared_ptr<RNG>& rgen): RandomSample(rgen, Dist{}) { }
+    RandomSample() : RandomSample(nullptr) { }
 
     /**
      * Samples n i.i.d variates from the standard distribution D
@@ -70,57 +64,27 @@ struct RandomSample {
      */
     Sample_type draw(std::size_t n) {
         Sample_type retval(n);
-        for (std::size_t i=0; i < n; i++) {
-            retval(i) = dist(rng);
+        for (std::size_t i=0; i < n; ++i) {
+            retval(i) = dist(*rng);
         }
         return retval;
     }
 
     Value_type draw() {
-        return dist(rng);
+        return dist(*rng);
     }
 
     Value_type draw(const Param_type& params) {
-        return dist(rng, params);
+        return dist(*rng, params);
     }
 
     Param_type param() const {
         return dist.param();
     }
 private:
+    std::shared_ptr<RNG> rng;
     Dist dist;
-    RNG rng;
 };
-
-
-/**
- * Gaussian autoregressive sampler.
- * From Neal, R. M. (1998) “Regression and classification using Gaussian process priors”,
- * in J.M. Bernardo et al (editors) Bayesian Statistics 6, Oxford University Press
- * @tparam RNtraits - random number traits, defined by GenericPseudoRandom, Normal_rng specialization by default
- */
-template<typename RNTraits, typename Dist>
-struct GARsampler {
-    // TODO: move to Schemes
-    using Rng_type = typename RNTraits::Rng_type;
-
-    // TODO: check for efficiency use of Eigen objects
-    Vector sample(const Vector& mu, const Vector& cur_x, const Matrix& M, const double eps) const {
-        Vector z(cur_x.size());
-        Vector shift = mu + (cur_x - mu) * sqrt(1 - eps*eps);
-        Rng_type rng = Rng_type::makeRnGenerator();
-        Dist dist;
-
-        for (std::size_t i=0; i < cur_x.size(); i++) {
-            z[i] = dist(rng);
-        }
-
-        // FIXME: check for rcond
-
-        return shift + eps * M * z;
-    }
-};
-
 
 /**
  * Univariate/multivarite NormalDist distribution
@@ -135,8 +99,7 @@ public:
      * @param mu, sigma - parameters of normal distribution
      * @return log density
      */
-    static double logDensity(const double x, const double mu, const double sigma) {
-        // FIXME: check params for correctness
+    static inline double logDensity(const double x, const double mu, const double sigma) {
         return -log(sigma) - 0.5 * pow(x - mu, 2) / pow(sigma, 2);
     }
     /**
@@ -147,10 +110,9 @@ public:
      * @return log density
      */
     template<typename DerivedA, typename DerivedB, typename DerivedC>
-    static double logDensity(const Eigen::MatrixBase<DerivedA>& x,
-                             const Eigen::MatrixBase<DerivedB>& mu,
-                             const Eigen::LLT<DerivedC>& L) {
-        // TODO: check size conformance
+    static inline double logDensity(const Eigen::MatrixBase<DerivedA>& x,
+                                    const Eigen::MatrixBase<DerivedB>& mu,
+                                    const Eigen::LLT<DerivedC>& L) {
         double sqstv = L.template solve(x - mu).cwiseProduct(x - mu).sum();
         double log_det = log(L.matrixL().toDenseMatrix().diagonal().array()).sum();
         return -log_det - 0.5 * sqstv;
@@ -161,8 +123,7 @@ public:
      * @param mu, sigma - parameters of normal distribution
      * @return value of loglikelihood
      */
-    static double logLikelihood(const Eigen::Ref<Sample_type>& data, const double mu, const double sigma) {
-        // FIXME: check param for correctness
+    static inline double logLikelihood(const Eigen::Ref<Sample_type>& data, const double mu, const double sigma) {
         double retval(0);
         size_t n = data.size();
         for (int i = 0; i < n; ++i) {
@@ -178,26 +139,24 @@ public:
      * @return vector of variates
      */
     template<typename RNG>
-    static Sample_type sample(std::size_t n, const double mu, const double sigma, RandomSample<RNG, Dist_type>& rsg) {
-        //FIXME: check params for correctness
-        Sample_type z(rsg.draw(n));
-        return (sigma * z).array() + mu;
+    static inline Sample_type sample(std::size_t n, const double mu, const double sigma,
+                                     RandomSample<RNG, Dist_type>& rsg, const double scale=1.) {
+        return scale * sigma * rsg.draw(n).array() + mu;
     }
     /**
      * Samples one variate from a multivariate normal distribution
      * @param mu - vector of marginal means
      * @param L - lower triangular matrix of Cholesky decomposition of the covariance matrix
      * @param rsg - random sequence generator using RNG random numbers generator
+     * @param scale - scaling for covariance
      * @return a multivariate normal variable
      */
     template<typename DerivedA, typename DerivedB, typename RNG>
-    static Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::LLT<DerivedB>& L,
-                         RandomSample<RNG, Dist_type>& rsg) {
-        Sample_type z(rsg.draw(mu.size()));
-        return mu + L.matrixL() * z;
+    static inline Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::LLT<DerivedB>& L,
+                                     RandomSample<RNG, Dist_type>& rsg, const double scale=1.) {
+        return mu + L.matrixL() * rsg.draw(mu.size()) * scale;
     }
 };
-
 
 /**
  * A univariate/multivariate PoissonDist distribution. Only zero covariance is implemented in case of multivariate version
@@ -212,8 +171,7 @@ public:
      * @param lambda - parameter of poisson distribution
      * @return log density
      */
-    static double logDensity(const double x, const double lambda) {
-        //FIXME: check param for correctness
+    static inline double logDensity(const double x, const double lambda) {
         return x * log(lambda) - lambda;
     }
     /**
@@ -224,14 +182,12 @@ public:
      * @return log density
      */
     template<typename DerivedA, typename DerivedB>
-    static double logDensity(const Eigen::MatrixBase<DerivedA>& x,
-                             const Eigen::ArrayBase<DerivedB>& lambda,
-                             const double lambda0=0) {
-        // FIXME: check params for correctness
+    static inline double logDensity(const Eigen::MatrixBase<DerivedA>& x,
+                                    const Eigen::ArrayBase<DerivedB>& lambda,
+                                    const double lambda0=0) {
         if (lambda0 != 0) {
-            throw LogicException("Non-zero variance for multivariate PoissonDist not yet implemented");
+            throw LogicException("Non-zero variance for multivariate Poisson not implemented");
         }
-        // TODO: check size conformance
         return (x.template cast<double>().array() * lambda.log() - lambda).sum();
     }
     /**
@@ -240,8 +196,7 @@ public:
      * @param lambda - parameter of poisson distribution
      * @return value of loglikelihood
      */
-    static double logLikelihood(const Eigen::Ref<Sample_type>& data, const double lambda) {
-        //FIXME: check param for correctness
+    static inline double logLikelihood(const Eigen::Ref<Sample_type>& data, const double lambda) {
         double sumlfact((data.cast<double>().array() + 1).lgamma().sum());
         double sumx(data.cast<double>().sum());
         return sumx * log(lambda) - sumlfact - data.size() * lambda;
@@ -254,7 +209,7 @@ public:
      * @return vector of variates
      */
     template<typename RNG>
-    static Sample_type sample(std::size_t n, RandomSample<RNG, Dist_type>& rsg) {
+    static inline Sample_type sample(std::size_t n, RandomSample<RNG, Dist_type>& rsg) {
         return rsg.draw(n);
     }
     /**
@@ -263,9 +218,8 @@ public:
      * @param rng - random numbers generator
      * @return a multivariate normal variable
      */
-    template<typename RNG, typename Derived>
-    static Sample_type sample(const Eigen::DenseBase<Derived>& lambda, RandomSample<RNG, Dist_type>& rsg) {
-        //FIXME: check params for correctness
+    template<typename RNG>
+    static inline Sample_type sample(const Vector& lambda, RandomSample<RNG, Dist_type>& rsg) {
         using Param_type = typename RandomSample<RNG, Dist_type>::Param_type;
         Sample_type z(lambda.size());
         for (int i = 0; i < lambda.size(); ++i) {

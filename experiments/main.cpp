@@ -10,6 +10,9 @@
 #include <chrono>
 #include "../baysis/probsupport.hpp"
 #include "../baysis/filterschemes.cpp"
+#include "../baysis/samplingschemes.hpp"
+#include "../baysis/algorithms.hpp"
+#include "../baysis/accumulator.hpp"
 
 using namespace std;
 using namespace schemes;
@@ -17,11 +20,12 @@ using namespace schemes;
 
 int main(int argc, const char * argv[]) {
 
-    RandomSample<std::mt19937, std::normal_distribution<> > rsg{1};
+    std::shared_ptr<std::mt19937> rng = std::make_shared<std::mt19937>(GenericPseudoRandom<std::mt19937>::makeRnGenerator(1));
+    RandomSample<std::mt19937, std::normal_distribution<> > rsg{rng};
 /*
-    RandomSample<std::mt19937, std::poisson_distribution<> > rsg2{1};
+    RandomSample<std::mt19937, std::poisson_distribution<> > rsg2{rng};
     std::uniform_int_distribution<> randint(1,10);
-    RandomSample<std::mt19937, std::uniform_int_distribution<> > rsg3{randint, 1};
+    RandomSample<std::mt19937, std::uniform_int_distribution<> > rsg3{rng, randint};
 
     // Draw 10 random numbers from standard normal
     cout << "Vector of 10 random numbers from normal:\n" << rsg.draw(10) << endl;
@@ -57,7 +61,7 @@ int main(int argc, const char * argv[]) {
     cout << "Logdensity of the multivariate poisson:\n" << PoissonDist::logDensity(pois_sample, lambdas.array()) << endl;
 
     std::poisson_distribution<> pois(3.4);
-    RandomSample<std::mt19937, std::poisson_distribution<> > rsg4{pois, 1};
+    RandomSample<std::mt19937, std::poisson_distribution<> > rsg4{rng, pois};
     pois_sample = PoissonDist::sample(n, rsg4);
     cout << "A sample of 5 i.i.d. poisson distributed variables Poi(3.4):\n" << pois_sample << endl;
     cout << "loglikelihood of the sample:\n" << PoissonDist::logLikelihood(pois_sample, 3.4) << endl;
@@ -89,14 +93,13 @@ int main(int argc, const char * argv[]) {
     std::cout << "To calc inverse via solve = " << chrono::duration_cast<chrono::microseconds>(t5-t4).count() << std::endl;
     std::cout << A.inverse().isApprox(Ainv1) << std::endl;
     std::cout << A.inverse().isApprox(Ainv2) << std::endl;
-    std::cout << "A.inverse() = \n" << A.inverse() << std::endl;
+//    std::cout << "A.inverse() = \n" << A.inverse() << std::endl;
 //    std::cout << "Ainv1 = \n" << Ainv1 << std::endl;
 //    std::cout << "Ainv2 = \n" << Ainv2 << std::endl;
-    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
-    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
+//    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
+//    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
 */
-
-    //! Kalman filter/smoother tests
+    /** Some toy models for testing **/
     // Set up the model
     Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
     double delta = 0.1;
@@ -110,35 +113,36 @@ int main(int argc, const char * argv[]) {
     Q += Matrix::Identity(4, 4) * 0.5;
     R.setIdentity();
 
+    // Prior for state
     Matrix Sinit;
     Vector minit(4);
     minit << 1., 1., 0.5, 2.;
+    Sinit.setIdentity(4, 4);
+    Sinit *= 0.75; //
 
-    LGTransition transitionM(4);
-    LGObservation observationM(4, 2);
+    LGTransitionStationary transitionM(10, 4, 0);
+    LGObservationStationary observationM(10, 4, 2);
 
     transitionM.init(A, Q);
+    transitionM.setPrior(minit, Sinit);
     observationM.init(C, R);
 
     // Generate some data
     Matrix data(2, 10);
     Vector state = minit;
     for (int i = 0; i < 10; ++i) {
-        state = transitionM.stateMean(state) + NormalDist::sample(Vector(4).setZero(), Q.llt(), rsg);
-        Vector obs = observationM.obsMean(state) + NormalDist::sample(Vector(2).setZero(), R.llt(), rsg);
+        state = transitionM.getMean(state) + NormalDist::sample(Vector(4).setZero(), Q.llt(), rsg);
+        Vector obs = observationM.getMean(state) + NormalDist::sample(Vector(2).setZero(), R.llt(), rsg);
         data.col(i) = obs;
     }
 
     std::cout << "Observations:\n" << data << std::endl;
-
-    // Prior for state
-    Sinit.setIdentity(4, 4);
-    Sinit *= 1.e9; // <-- diffuse prior
-
+/*
+    //! Kalman filter/smoother tests
     // Initialize Kalman filter with covariance scheme
     CovarianceScheme kf(4, 2);
 
-    kf.init(minit, Sinit);
+    kf.init(transitionM.getPriorMean(), transitionM.getPriorCov());
 
     Matrix state_means(4, 10);
     Matrix state_mean_priors(4, 10);
@@ -182,7 +186,7 @@ int main(int argc, const char * argv[]) {
 
     // Set up information filter
     InformationScheme inff(4, 2);
-    inff.init(minit, Sinit);
+    inff.init(transitionM.getPriorMean(), transitionM.getPriorCov());
 
     state_means.setZero();
     state_mean_priors.setZero();
@@ -230,6 +234,24 @@ int main(int argc, const char * argv[]) {
 
     std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
     std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
+*/
+
+
+    std::shared_ptr<SingleStateScheme<std::mt19937> > sampler(make_shared<SingleStateScheme<std::mt19937> >());
+    std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
+    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
+    trm->init(A,Q);
+    trm->setPrior(minit, Sinit);
+    obsm->init(C, R);
+
+    algos::MCMC<SingleStateScheme<std::mt19937> > ssmetropolis(trm,obsm, sampler, 1000);
+    Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
+    ssmetropolis.initialise(data, init_x, 1);
+    ssmetropolis.run();
+
+    for (const auto& s: ssmetropolis.accumulator.samples) {
+        std:cout << s << std::endl;
+    }
 
     return 0;
 }

@@ -10,13 +10,13 @@
 #define BAYSIS_FILTERSCHEMES_HPP
 
 #include "matsupport.hpp"
-#include "models.hpp"
+#include "models.cpp"
 
 using Eigen::Ref;
-using ssm::LGTransition;
-using ssm::LGObservation;
+using ssmodels::LGTransitionStationary;
+using ssmodels::LGObservationStationary;
 
-//FIXME: change all functions accepting Eigen objects into templated functions or to accept Ref<>
+
 namespace schemes {
 
     class LinearStateBase {
@@ -26,8 +26,8 @@ namespace schemes {
         virtual void init(const Vector &x_init, const Matrix &X_init);
 
         // Exposed Numerical Results
-        Vector x;
-        Matrix X;
+        Vector x;        // expected state
+        Matrix X;        // state covariance
     protected:
         NumericalRcond rclimit;
     };
@@ -40,19 +40,16 @@ namespace schemes {
         explicit FilterBase(std::size_t x_size);
 
         // Make a predict step
-        virtual void predict(LGTransition& lgsm);
+        virtual void predict(LGTransitionStationary& lgsm);
         // Compute innovation based on observation of the data
-        virtual void observe(LGObservation& lgobsm, const Ref<Vector> &y) = 0;
-        // expected state
-        // state covariance
+        virtual void observe(LGObservationStationary& lgobsm, const Ref<Vector> &y) = 0;
 
     protected:
         // Update the expected state and covariance
-        virtual void update(LGObservation& lgobsm, const Vector &r) = 0;
+        virtual void update(LGObservationStationary& lgobsm, const Ref<Vector> &r) = 0;
         // Transform the internal state into standard representation, if needed
         virtual void transform() = 0;
 
-        std::size_t last_y_size;
         // Permanently allocated temp
         Matrix temp_X;
     };
@@ -64,18 +61,19 @@ namespace schemes {
      */
     class CovarianceScheme: virtual public FilterBase {
     public:
-        CovarianceScheme(std::size_t x_size, std::size_t y_initsize);
+        CovarianceScheme(std::size_t x_size, std::size_t y_size);
 
-        void observe(LGObservation &lgobsm, const Ref<Vector> &y) override;
+        void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
 
         Matrix S;		// Innovation Covariance
         Matrix K;		// Kalman Gain
 
     protected:
         void transform() override { /*No transformation needed*/ }
-        void update(LGObservation& lgobsm, const Vector &r) override;
-        // Resize in case the observations size changes
-        void observe_size(std::size_t y_size);
+        void update(LGObservationStationary& lgobsm, const Ref<Vector> &r) override;
+
+        // Permanently allocated temp
+        Matrix tempXY;
     };
 
     /**
@@ -85,23 +83,22 @@ namespace schemes {
      */
     class InformationScheme:  virtual public FilterBase {
     public:
-        InformationScheme(std::size_t x_size, std::size_t z_initsize);
+        InformationScheme(std::size_t x_size, std::size_t y_size);
 
         void init(const Vector &x_init, const Matrix &X_init) override;
-        void initInformation (const Vector &eta, const Matrix &Lambda);  // Initialize with information directly
-        void predict(LGTransition &lgsm) override;
-        void observe(LGObservation &lgobsm, const Ref<Vector> &y) override;
+        void initInformation (const Ref<Vector> &eta, const Ref<Matrix> &Lambda);  // Initialize with information directly
+        void predict(LGTransitionStationary &lgsm) override;
+        void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
 
         Vector e;				// Information state
         Matrix La;       		// Information
 
     protected:
         void transform() override;
-        void update(LGObservation &lgobsm, const Vector &r) override;
-        void observe_size (std::size_t y_size);
+        void update(LGObservationStationary &lgobsm, const Ref<Vector> &r) override;
 
-        // Permanently allocated temps
-        Matrix R_inv;
+        // Permanently allocated temp
+        Matrix tempCR;
     };
 
     /**
@@ -127,9 +124,9 @@ namespace schemes {
           * @param filtered_Xprior - predicted filtered state covariance saved during filter run
           * @param filtered_Xpost - posterior filtered state covariance saved during filter run
           */
-        void updateBack(const LGTransition &lgsm,
-                        const Vector &filtered_xprior, const Vector &filtered_xpost,
-                        const Matrix &filtered_Xprior, const Matrix &filtered_Xpost);
+        void updateBack(const LGTransitionStationary &lgsm,
+                        const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
+                        const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
 
         Matrix J;       // Backward Kalman gain
     };
@@ -142,20 +139,16 @@ namespace schemes {
      public:
          explicit TwoWayScheme(size_t x_size);
 
-         void initInformation(LGObservation &lgobsm, const Ref<Vector> &y_final,
-                              const Vector &x_final, const Matrix &X_final);
-         void predictBack(LGTransition &lgsm);
-         void updateBack(LGObservation &lgobsm, const Ref<Vector> &y,
-                         const Vector &filtered_xprior, const Matrix &filtered_Xprior );
+         void initInformation(LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+                              const Ref<Vector> &x_final, const Ref<Matrix> &X_final);
+         void predictBack(LGTransitionStationary &lgsm);
+         void updateBack(LGObservationStationary &lgobsm, const Ref<Vector> &y,
+                         const Ref<Vector> &filtered_xprior, const Ref<Matrix> &filtered_Xprior );
 
          Matrix Tau;            // Information matrix
          Vector theta;          // Information vector
 
      protected:
-         // Resize in case the observations size changes
-         void observe_size(std::size_t y_size);
-
-         size_t last_y_size;
          // Permanently stored temps
          Matrix temp_D;
          Matrix temp_Y;
