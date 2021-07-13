@@ -16,7 +16,7 @@ using namespace ssmodels;
 
 namespace schemes {
 
-    template<typename RNG>
+    template<typename ObsM,typename RNG>
     struct AutoregressiveUpdate {
         template<typename DerivedA, typename DerivedB>
         void propose(const Eigen::MatrixBase<DerivedA>& x,
@@ -24,7 +24,7 @@ namespace schemes {
                      const Eigen::LLT<Matrix> &L);
 
         template<typename DerivedA, typename DerivedB>
-        bool accept(const LGObservationStationary& obsm,
+        bool accept(const ObsM& obsm,
                     const Eigen::MatrixBase<DerivedA> &y,
                     const Eigen::MatrixBase<DerivedB> &x);
 
@@ -35,11 +35,9 @@ namespace schemes {
     };
 
 
-    template<typename RNG>
+    template<typename TrM, typename ObsM, typename RNG>
     class SingleStateScheme {
     public:
-        typedef RNG Rng_type;
-
         void init(const Matrix &observations, const TransitionModel &tr_model, u_long seed);
         void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
         void setScaling(const std::vector<double>& scalings, int i) { ar_update.eps = scalings[i % scalings.size()]; }
@@ -47,7 +45,7 @@ namespace schemes {
         Matrix cur_sample;
         Vector_int acceptances;
     private:
-        AutoregressiveUpdate<RNG> ar_update;
+        AutoregressiveUpdate<ObsM, RNG> ar_update;
         Matrix data;
         Matrix post_mean_init;
         Matrix post_mean;
@@ -55,18 +53,18 @@ namespace schemes {
         Eigen::LLT<Matrix> post_L;
     };
 
-    template<typename RNG>
+    template<typename ObsM, typename RNG>
     template<typename DerivedA, typename DerivedB>
-    void AutoregressiveUpdate<RNG>::propose(const Eigen::MatrixBase<DerivedA> &x,
+    void AutoregressiveUpdate<ObsM, RNG>::propose(const Eigen::MatrixBase<DerivedA> &x,
                                             const Eigen::MatrixBase<DerivedB> &mu,
                                             const Eigen::LLT<Matrix> &L) {
         proposal = NormalDist::sample(mu + sqrt(1 - eps * eps) * (x - mu), L, norm, eps);
     }
 
 
-    template<typename RNG>
+    template<typename ObsM, typename RNG>
     template<typename DerivedA, typename DerivedB>
-    bool AutoregressiveUpdate<RNG>::accept(const LGObservationStationary &obsm,
+    bool AutoregressiveUpdate<ObsM, RNG>::accept(const ObsM &obsm,
                                            const Eigen::MatrixBase<DerivedA> &y,
                                            const Eigen::MatrixBase<DerivedB> &x) {
         double alpha = uniform.draw();
@@ -76,19 +74,12 @@ namespace schemes {
     }
 
 
-    template<typename RNG>
-    void SingleStateScheme<RNG>::init(const Matrix &observations, const TransitionModel &tr_model, u_long seed) {
-        // Resize containers
-//        cur_sample.resize(tr_model.stateDim(), tr_model.length());
-        acceptances.resize(tr_model.length());
-//        post_mean_init.resize(tr_model.stateDim(), tr_model.stateDim());
-//        post_mean.resize(tr_model.stateDim(), tr_model.stateDim());
-//        data.resizeLike(observations);
-
+    template<typename TrM, typename ObsM, typename RNG>
+    void SingleStateScheme<TrM, ObsM, RNG>::init(const Matrix &observations,
+                                                 const TransitionModel &tr_model, u_long seed) {
         // Initialise
-        const LGTransitionStationary& lg_transition = static_cast<const LGTransitionStationary&>(tr_model);
+        const TrM& lg_transition = static_cast<const TrM&>(tr_model);
         data = observations;
-//        cur_sample = lg_transition.getPriorMean();
         post_mean_init = (lg_transition.getA() * lg_transition.getA()
                            + lg_transition.getPriorCovInv() * lg_transition.getCov()).inverse() * lg_transition.getA();
         post_L_init.compute((lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
@@ -99,6 +90,7 @@ namespace schemes {
         post_L.compute((lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
                         + lg_transition.getPriorCovInv()).inverse());
 
+        acceptances.resize(tr_model.length());
         // Setup the update scheme
         ar_update.proposal.resize(tr_model.stateDim());
         std::shared_ptr<RNG> rng;
@@ -111,15 +103,15 @@ namespace schemes {
         ar_update.norm = RandomSample<RNG, std::normal_distribution<> >(rng);
     }
 
-    template<typename RNG>
-    void SingleStateScheme<RNG>::sample(const TransitionModel &tr_model,
-                                        const ObservationModel &obs_model) {
+    template<typename TrM, typename ObsM, typename RNG>
+    void SingleStateScheme<TrM, ObsM, RNG>::sample(const TransitionModel &tr_model,
+                                                   const ObservationModel &obs_model) {
         std::size_t T{tr_model.length()-1};
 
         ar_update.template propose(cur_sample.col(0),
-                post_mean_init * (cur_sample.col(1) + static_cast<const LGTransitionStationary&>(tr_model).getPriorMean()),
+                post_mean_init * (cur_sample.col(1) + static_cast<const TrM&>(tr_model).getPriorMean()),
                 post_L_init);
-        if (ar_update.template accept(static_cast<const LGObservationStationary&>(obs_model),
+        if (ar_update.template accept(static_cast<const ObsM&>(obs_model),
                 data.col(0), cur_sample.col(0))) {
             cur_sample.col(0) = ar_update.proposal;
             ++acceptances(0);
@@ -130,7 +122,7 @@ namespace schemes {
                     cur_sample.col(t),
                     post_mean * (cur_sample.col(t-1) + cur_sample.col(t+1)),
                     post_L);
-            if (ar_update.template accept(static_cast<const LGObservationStationary&>(obs_model),
+            if (ar_update.template accept(static_cast<const ObsM&>(obs_model),
                     data.col(t), cur_sample.col(t))) {
                 cur_sample.col(t) = ar_update.proposal;
                 ++acceptances(t);
@@ -138,9 +130,9 @@ namespace schemes {
         }
 
         ar_update.template propose(cur_sample.col(T),
-                static_cast<const LGTransitionStationary&>(tr_model).getMean(cur_sample.col(T-1)),
-                static_cast<const LGTransitionStationary&>(tr_model).getL());
-        if (ar_update.template accept(static_cast<const LGObservationStationary&>(obs_model),
+                static_cast<const TrM&>(tr_model).getMean(cur_sample.col(T-1)),
+                static_cast<const TrM&>(tr_model).getL());
+        if (ar_update.template accept(static_cast<const ObsM&>(obs_model),
                 data.col(T), cur_sample.col(T))) {
             cur_sample.col(T) = ar_update.proposal;
             ++acceptances(T);

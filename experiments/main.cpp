@@ -236,15 +236,15 @@ int main(int argc, const char * argv[]) {
     std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
 */
 
-
-    std::shared_ptr<SingleStateScheme<std::mt19937> > sampler(make_shared<SingleStateScheme<std::mt19937> >());
+    using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
+    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
     std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
     std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
     trm->init(A,Q);
     trm->setPrior(minit, Sinit);
     obsm->init(C, R);
 
-    algos::MCMC<SingleStateScheme<std::mt19937> > ssmetropolis(trm,obsm, sampler, 1000);
+    algos::MCMC<Sampler_type> ssmetropolis(trm,obsm, sampler, 1000);
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
     ssmetropolis.initialise(data, init_x, 1);
     ssmetropolis.run();
@@ -253,5 +253,7 @@ int main(int argc, const char * argv[]) {
         std:cout << s << std::endl;
     }
 
+    std::cout << "Acceptances:\n" << ssmetropolis.accumulator.accepts << std::endl;
+    std::cout << "Duration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
     return 0;
 }
