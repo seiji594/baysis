@@ -16,6 +16,7 @@
 typedef Eigen::MatrixXd Matrix;
 typedef Eigen::VectorXd Vector;
 typedef Eigen::VectorXi Vector_int;
+typedef Eigen::ArrayXd Array;
 
 /** Minimum allowable reciprocal condition number for PD Matrix factorisations
  * Initialised default gives 5 decimal digits of headroom */

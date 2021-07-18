@@ -56,16 +56,16 @@ namespace ssmodels
         LinearModel(std::size_t input_rows, std::size_t input_cols, std::size_t control_size=0);
 
         template<class Derived>
-        void apply(const Eigen::MatrixBase<Derived>& vec) const;
+        void apply(const Eigen::DenseBase<Derived> &vec) const;
 
         template<class Derived>
-        void setInputM(const Eigen::MatrixBase<Derived>& input_m);
+        void setInputM(const Eigen::MatrixBase<Derived> &input_m);
 
         template<class Derived>
-        void setControlM(const Eigen::MatrixBase<Derived>& control_m);
+        void setControlM(const Eigen::MatrixBase<Derived> &control_m);
 
         template<class Derived>
-        void setControls(const Eigen::MatrixBase<Derived>& cur_ctrl);
+        void setControls(const Eigen::MatrixBase<Derived> &cur_ctrl);
 
     protected:
         Matrix inputM;
@@ -79,16 +79,21 @@ namespace ssmodels
      */
     class LGTransitionStationary: public TransitionModel, public LinearModel {
     public:
+        typedef double Value_type;
+
         LGTransitionStationary(std::size_t seq_length, std::size_t state_size, std::size_t control_size = 0);
 
         void init(const Matrix& A, const Matrix & Cov, const Matrix& B=Matrix());
         void setPrior(const Vector& mu, const Matrix& sigma);
 
         template<typename DerivedA, typename DerivedB>
-        double logDensity(const Eigen::MatrixBase<DerivedA>& curx, const Eigen::MatrixBase<DerivedB>& prevx) const;
+        double logDensity(const Eigen::DenseBase<DerivedA> &curx, const Eigen::DenseBase<DerivedB> &prevx) const;
+
+        template<typename RNG>
+        Vector simulate(const Vector& prev_state, std::shared_ptr<RNG> &rng) const;
 
         template<class Derived>
-        Vector& getMean(const Eigen::MatrixBase<Derived>& x) const {
+        Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
             apply(x);
             return res;
         }
@@ -113,6 +118,7 @@ namespace ssmodels
         const Eigen::LLT<Matrix> & getL() const {
             return LQ;
         }
+
         const Eigen::LLT<Matrix> & getLprior() const {
             return LQprior;
         }
@@ -133,16 +139,21 @@ namespace ssmodels
      */
     class LGObservationStationary: public ObservationModel, public LinearModel {
     public:
+        typedef double Value_type;
+
         LGObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size,
                                 std::size_t control_size=0);
 
         void init(const Matrix& C, const Matrix& Cov, const Matrix& D=Matrix());
 
         template<typename DerivedA, typename DerivedB>
-        double logDensity(const Eigen::MatrixBase<DerivedA>& y, const Eigen::MatrixBase<DerivedB>& x) const;
+        double logDensity(const Eigen::DenseBase<DerivedA> &y, const Eigen::DenseBase<DerivedB> &x) const;
+
+        template<typename RNG>
+        Vector simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
 
         template<class Derived>
-        Vector& getMean(const Eigen::MatrixBase<Derived> &y) const {
+        Vector& getMean(const Eigen::DenseBase<Derived> &y) const {
             apply(y);
             return res;
         }
@@ -166,28 +177,34 @@ namespace ssmodels
     };
 
     template <typename Derived>
-    void LinearModel::apply(const Eigen::MatrixBase<Derived>& vec) const {
-        res = inputM * vec;
+    void LinearModel::apply(const Eigen::DenseBase<Derived> &vec) const {
+        if (inputM.isDiagonal())
+            res = inputM.diagonal().template cwiseProduct(vec.derived());
+        else
+            res = inputM * vec.derived();
         if (controlM.size() != 0)
-            res.noalias() += controlM * controls;
+            if (controlM.isDiagonal())
+                res += controlM.diagonal().template cwiseProduct(vec.derived());
+            else
+                res += controlM * controls;
     }
 
     template <typename Derived>
-    void LinearModel::setInputM(const Eigen::MatrixBase<Derived>& input_m) {
+    void LinearModel::setInputM(const Eigen::MatrixBase<Derived> &input_m) {
         if (input_m.size() != inputM.size())
             throw LogicException("Input matrix is the wrong size");
         inputM = input_m;
     }
 
     template <typename Derived>
-    void LinearModel::setControlM(const Eigen::MatrixBase<Derived>& control_m) {
+    void LinearModel::setControlM(const Eigen::MatrixBase<Derived> &control_m) {
         if (control_m.size() != controlM.size())
             throw LogicException("Control matrix is the wrong size");
         controlM = control_m;
     }
 
     template <typename Derived>
-    void LinearModel::setControls(const Eigen::MatrixBase<Derived>& cur_ctrl) {
+    void LinearModel::setControls(const Eigen::MatrixBase<Derived> &cur_ctrl) {
         if (cur_ctrl.size() != controls.size())
             throw LogicException("Controls vector is the wrong size");
         controls = cur_ctrl;
@@ -195,16 +212,28 @@ namespace ssmodels
 
 
     template<typename DerivedA, typename DerivedB>
-    double LGTransitionStationary::logDensity(const Eigen::MatrixBase<DerivedA> &curx,
-                                              const Eigen::MatrixBase<DerivedB> &prevx) const {
+    double LGTransitionStationary::logDensity(const Eigen::DenseBase<DerivedA> &curx,
+                                              const Eigen::DenseBase<DerivedB> &prevx) const {
         return NormalDist::logDensity(curx, getMean(prevx), LQ);
+    }
+
+    template<typename RNG>
+    Vector LGTransitionStationary::simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng) const {
+        RandomSample<RNG, std::normal_distribution<> > rsg(rng);
+        return NormalDist::sample(getMean(prev_state), LQ, rsg);
     }
 
 
     template<typename DerivedA, typename DerivedB>
-    double LGObservationStationary::logDensity(const Eigen::MatrixBase<DerivedA> &y,
-                                               const Eigen::MatrixBase<DerivedB> &x) const {
+    double LGObservationStationary::logDensity(const Eigen::DenseBase<DerivedA> &y,
+                                               const Eigen::DenseBase<DerivedB> &x) const {
         return NormalDist::logDensity(y, getMean(x), LR);
+    }
+
+    template<typename RNG>
+    Vector LGObservationStationary::simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const {
+        RandomSample<RNG, std::normal_distribution<> > rsg(rng);
+        return NormalDist::sample(getMean(cur_state), LR, rsg);
     }
 
 }

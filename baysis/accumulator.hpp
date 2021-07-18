@@ -17,37 +17,54 @@
 using namespace H5;
 
 
+template<typename Scalar=double>
 class SampleAccumulator {
 public:
     typedef typename decltype(std::chrono::high_resolution_clock::now())::rep Timedelta;
-    SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
-    : samples(std::vector<Matrix>(nsamples, Matrix(nrows, ncols))), accepts(ncols) {}
+    typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
 
-    void addSample(const Matrix &sample, std::size_t iter);
+    SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
+    : samples(nsamples, Sample_type::Zero(nrows, ncols)), accepts() {}
+
+    void resize(std::size_t new_sz);
+    void addSample(const Sample_type &sample, std::size_t iter);
     void setAcceptances(const Vector_int& acc);
     void setDuration(Timedelta dur);
     herr_t save(const std::string& fname);
 
 //private:
-    std::vector<Matrix> samples;
-    Vector_int accepts;
+    std::vector<Sample_type> samples;
+    std::vector<int> accepts;
     Timedelta duration{};
 
 };
 
-void SampleAccumulator::addSample(const Matrix &sample, std::size_t iter) {
+template<typename Scalar>
+void SampleAccumulator<Scalar>::addSample(const Sample_type &sample, std::size_t iter) {
     samples[iter] = sample;
 }
 
-void SampleAccumulator::setAcceptances(const Vector_int &acc) {
-    accepts = acc;
+template<typename Scalar>
+void SampleAccumulator<Scalar>::setAcceptances(const Vector_int &acc) {
+    for (int i = 0; i < acc.size(); ++i) {
+        accepts.push_back(acc(i));
+    }
 }
 
-void SampleAccumulator::setDuration(Timedelta dur) {
+template<typename Scalar>
+void SampleAccumulator<Scalar>::setDuration(Timedelta dur) {
     duration = dur;
 }
+
+template<typename Scalar>
+void SampleAccumulator<Scalar>::resize(std::size_t new_sz) {
+    std::size_t ncols = samples.front().cols();
+    std::size_t nrows = samples.front().rows();
+    samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
+}
 /*
-herr_t SampleAccumulator::save(const std::string& fname) {
+template<typename Scalar>
+herr_t SampleAccumulator<Scalar>::save(const std::string& fname) {
     const H5std_string file_name("../data/"+fname+".h5");
     const H5std_string dset_name("samples");
     std::size_t dim1 = samples.size();

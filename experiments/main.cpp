@@ -13,6 +13,7 @@
 #include "../baysis/samplingschemes.hpp"
 #include "../baysis/algorithms.hpp"
 #include "../baysis/accumulator.hpp"
+#include "../baysis/dataprovider.hpp"
 
 using namespace std;
 using namespace schemes;
@@ -120,29 +121,20 @@ int main(int argc, const char * argv[]) {
     Sinit.setIdentity(4, 4);
     Sinit *= 0.75; //
 
-    LGTransitionStationary transitionM(10, 4, 0);
-    LGObservationStationary observationM(10, 4, 2);
+    std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
+    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
+    trm->init(A,Q);
+    trm->setPrior(minit, Sinit);
+    obsm->init(C, R);
 
-    transitionM.init(A, Q);
-    transitionM.setPrior(minit, Sinit);
-    observationM.init(C, R);
-
-    // Generate some data
-    Matrix data(2, 10);
-    Vector state = minit;
-    for (int i = 0; i < 10; ++i) {
-        state = transitionM.getMean(state) + NormalDist::sample(Vector(4).setZero(), Q.llt(), rsg);
-        Vector obs = observationM.getMean(state) + NormalDist::sample(Vector(2).setZero(), R.llt(), rsg);
-        data.col(i) = obs;
-    }
-
-    std::cout << "Observations:\n" << data << std::endl;
+    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
+    std::cout << "Observations:\n" << simulator.getData() << std::endl;
 /*
     //! Kalman filter/smoother tests
     // Initialize Kalman filter with covariance scheme
     CovarianceScheme kf(4, 2);
 
-    kf.init(transitionM.getPriorMean(), transitionM.getPriorCov());
+    kf.init((*trm).getPriorMean(), (*trm).getPriorCov());
 
     Matrix state_means(4, 10);
     Matrix state_mean_priors(4, 10);
@@ -151,11 +143,11 @@ int main(int argc, const char * argv[]) {
 
     for (int i = 0; i < 10; ++i) {
         if (i != 0) {
-            kf.predict(transitionM); // make prediction of the next state's mean and cov
+            kf.predict(*trm); // make prediction of the next state's mean and cov
             state_mean_priors.col(i) = kf.x;
             state_cov_priors.block(0, i * 4, 4, 4) = kf.X;
         }
-        kf.observe(observationM, data.col(i));  // observe data and update the state statistics
+        kf.observe(*obsm, simulator.next());  // observe data and update the state statistics
         // Saving results
         state_means.col(i) = kf.x;
         state_covs.block(0, i*4, 4, 4) = kf.X;
@@ -172,7 +164,7 @@ int main(int argc, const char * argv[]) {
     Matrix smoothed_covs(4, 4*10);
 
     for (int i = 8; i >= 0; --i) {
-        rts.updateBack(transitionM,
+        rts.updateBack(*trm,
                        state_mean_priors.col(i+1),
                        state_means.col(i),
                        state_cov_priors.block(0, 4 * (i+1), 4, 4),
@@ -186,7 +178,7 @@ int main(int argc, const char * argv[]) {
 
     // Set up information filter
     InformationScheme inff(4, 2);
-    inff.init(transitionM.getPriorMean(), transitionM.getPriorCov());
+    inff.init((*trm).getPriorMean(), (*trm).getPriorCov());
 
     state_means.setZero();
     state_mean_priors.setZero();
@@ -196,13 +188,15 @@ int main(int argc, const char * argv[]) {
     state_mean_priors.col(0) = minit;
     state_cov_priors.block(0, 0, 4, 4) = Sinit;
 
+    simulator.reset();
+
     for (int i = 0; i < 10; ++i) {
         if (i != 0) {
-            inff.predict(transitionM); // make prediction of the next state's mean and cov
+            inff.predict(*trm); // make prediction of the next state's mean and cov
             state_mean_priors.col(i) = inff.x;
             state_cov_priors.block(0, i * 4, 4, 4) = inff.X;
         }
-        inff.observe(observationM, data.col(i));  // observe data and update the state statistics
+        inff.observe(*obsm, simulator.next());  // observe data and update the state statistics
         // Saving results
         state_means.col(i) = inff.x;
         state_covs.block(0, i*4, 4, 4) = inff.X;
@@ -215,7 +209,7 @@ int main(int argc, const char * argv[]) {
     TwoWayScheme two(4);
     //FIXME: make the init API consistent between schemes (init may take obs model in all (but not necessarily use it)
     // and obs model may have a handle to observations)
-    two.initInformation(observationM, data.col(9),
+    two.initInformation(*obsm, simulator.at(9),
                         state_means.col(9),
                         state_covs.block(0,4*9,4,4));
 
@@ -224,8 +218,8 @@ int main(int argc, const char * argv[]) {
 
     // FIXME: make the smoother API consistent : both should have either one or two functions per cycle
     for (int i = 8; i >= 0; --i) {
-        two.predictBack(transitionM);
-        two.updateBack(observationM, data.col(i),
+        two.predictBack(*trm);
+        two.updateBack(*obsm, simulator.at(i),
                        state_mean_priors.col(i),
                        state_cov_priors.block(0, 4*i, 4, 4));
         smoothed_means.col(i) = two.x;
@@ -235,25 +229,48 @@ int main(int argc, const char * argv[]) {
     std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
     std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
 */
-
+/*
+    //! Single state Metropolis sampler
     using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
-    std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
-    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
-    trm->init(A,Q);
-    trm->setPrior(minit, Sinit);
-    obsm->init(C, R);
 
-    algos::MCMC<Sampler_type> ssmetropolis(trm,obsm, sampler, 1000);
+    algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1000, {0.2, 0.8});
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ssmetropolis.initialise(data, init_x, 1);
+    ssmetropolis.initialise(simulator.getData(), init_x, 1);
     ssmetropolis.run();
 
     for (const auto& s: ssmetropolis.accumulator.samples) {
-        std:cout << s << std::endl;
+        std::cout << s << std::endl;
     }
 
-    std::cout << "Acceptances:\n" << ssmetropolis.accumulator.accepts << std::endl;
-    std::cout << "Duration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
+    std::cout << "Acceptances:" << std::endl;
+    for (auto& acc: ssmetropolis.accumulator.accepts) {
+        std::cout << acc << "\t";
+    }
+    std::cout << "\nDuration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
+*/
+    //! Embedded HMM sampler
+    using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, LGObservationStationary, std::mt19937>;
+    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5));  // <-- 5 pool states
+
+    algos::MCMC<Sampler_type> ehmm(trm, obsm, sampler, 100, {0.1, 0.3});
+    Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
+    ehmm.initialise(simulator.getData(), init_x, 1);
+    ehmm.run();
+
+    for (const auto& s: ehmm.accumulator.samples) {
+        std::cout << s << std::endl;
+    }
+
+    std::cout << "Acceptances:" << std::endl;
+    int i = 0;
+    for (auto& acc: ehmm.accumulator.accepts) {
+        if (i == 10)
+            std::cout << std::endl;
+        std::cout << acc << "\t";
+        ++i;
+    }
+    std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
+
     return 0;
 }

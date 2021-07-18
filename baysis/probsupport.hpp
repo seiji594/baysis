@@ -110,10 +110,10 @@ public:
      * @return log density
      */
     template<typename DerivedA, typename DerivedB, typename DerivedC>
-    static inline double logDensity(const Eigen::MatrixBase<DerivedA>& x,
-                                    const Eigen::MatrixBase<DerivedB>& mu,
+    static inline double logDensity(const Eigen::DenseBase<DerivedA> &x,
+                                    const Eigen::DenseBase<DerivedB> &mu,
                                     const Eigen::LLT<DerivedC>& L) {
-        double sqstv = L.template solve(x - mu).cwiseProduct(x - mu).sum();
+        double sqstv = L.template solve(x.derived() - mu.derived()).cwiseProduct(x.derived() - mu.derived()).sum();
         double log_det = log(L.matrixL().toDenseMatrix().diagonal().array()).sum();
         return -log_det - 0.5 * sqstv;
     }
@@ -152,9 +152,9 @@ public:
      * @return a multivariate normal variable
      */
     template<typename DerivedA, typename DerivedB, typename RNG>
-    static inline Sample_type sample(const Eigen::MatrixBase<DerivedA>& mu, const Eigen::LLT<DerivedB>& L,
-                                     RandomSample<RNG, Dist_type>& rsg, const double scale=1.) {
-        return mu + L.matrixL() * rsg.draw(mu.size()) * scale;
+    static inline Sample_type sample(const Eigen::DenseBase<DerivedA> &mu, const Eigen::LLT<DerivedB>& L,
+                                     RandomSample<RNG, Dist_type>& rsg, const double scale= 1.) {
+        return mu.derived() + L.matrixL() * rsg.draw(mu.size()) * scale;
     }
 };
 
@@ -182,13 +182,13 @@ public:
      * @return log density
      */
     template<typename DerivedA, typename DerivedB>
-    static inline double logDensity(const Eigen::MatrixBase<DerivedA>& x,
+    static inline double logDensity(const Eigen::DenseBase<DerivedA> &x,
                                     const Eigen::ArrayBase<DerivedB>& lambda,
-                                    const double lambda0=0) {
+                                    const double lambda0= 0) {
         if (lambda0 != 0) {
             throw LogicException("Non-zero variance for multivariate Poisson not implemented");
         }
-        return (x.template cast<double>().array() * lambda.log() - lambda).sum();
+        return (x.derived().template cast<double>().array() * lambda.log() - lambda).sum();
     }
     /**
      * returns loglikelihood of the data given the distribution parameters
