@@ -58,8 +58,11 @@ namespace schemes {
     private:
         AutoregressiveUpdate<ObsM, RNG> ar_update;
         Data_type data;
+        // Pre-computed values
         Matrix post_mean_init;
-        Matrix post_mean;
+        Matrix scaled_mean_init;
+        Matrix scaled_post_mean;
+        Matrix scaled_prior_mean;
         Eigen::LLT<Matrix> post_L_init;
         Eigen::LLT<Matrix> post_L;
         std::vector<double> scalings;
@@ -75,7 +78,7 @@ namespace schemes {
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, 1> State_type;
 
-        explicit EmbedHmmSchemeND(Index psize, bool nflp=true) : pool_size(psize), noflip(nflp) { }
+        explicit EmbedHmmSchemeND(Index psize, bool flip=false) : pool_size(psize), noflip(!flip) { }
 
         void init(const Data_type& observations, const TransitionModel &tr_model, u_long seed);
         void setScales(const std::vector<double>& scales) { scalings = scales; }
@@ -146,15 +149,17 @@ namespace schemes {
         // Initialise
         const TrM& lg_transition = static_cast<const TrM&>(tr_model);
         data = observations;
-        post_mean_init = (lg_transition.getA() * lg_transition.getA()
-                           + lg_transition.getPriorCovInv() * lg_transition.getCov()).inverse() * lg_transition.getA();
-        post_L_init.compute((lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
-                             + lg_transition.getPriorCovInv()).inverse());
-        post_mean = (lg_transition.getA() * lg_transition.getA()
-                      + Matrix::Identity(lg_transition.stateDim(), lg_transition.stateDim())).inverse()
-                     * lg_transition.getA();
-        post_L.compute((lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
-                        + lg_transition.getPriorCovInv()).inverse());
+        Matrix post_cov_init = (lg_transition.getA().transpose() * lg_transition.getCovInv() * lg_transition.getA()
+                                + lg_transition.getPriorCovInv()).inverse();
+        post_mean_init.noalias() = post_cov_init * lg_transition.getA().transpose() * lg_transition.getCovInv();
+        scaled_mean_init.noalias() = post_cov_init * lg_transition.getPriorCovInv() * lg_transition.getPriorMean();
+        post_L_init.compute(post_cov_init);
+
+        Matrix post_cov = (lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
+                           + lg_transition.getCovInv()).inverse();
+        scaled_prior_mean.noalias() = post_cov * lg_transition.getCovInv();
+        scaled_post_mean.noalias() = post_cov * lg_transition.getA().transpose() * lg_transition.getCovInv();
+        post_L.compute(post_cov);
 
         acceptances.setZero(tr_model.length());
         // Setup the update scheme
@@ -176,7 +181,7 @@ namespace schemes {
         std::size_t T{tr_model.length()-1};
 
         ar_update.template propose(cur_sample.col(0),
-                post_mean_init * (cur_sample.col(1) + static_cast<const TrM&>(tr_model).getPriorMean()),
+                post_mean_init * cur_sample.col(1) + scaled_mean_init,
                 post_L_init);
         if (ar_update.template accept(static_cast<const ObsM&>(obs_model),
                 data.col(0), cur_sample.col(0))) {
@@ -187,7 +192,7 @@ namespace schemes {
         for (int t = 1; t < T; ++t) {
             ar_update.template propose(
                     cur_sample.col(t),
-                    post_mean * (cur_sample.col(t-1) + cur_sample.col(t+1)),
+                    scaled_prior_mean * cur_sample.col(t-1) + scaled_post_mean * cur_sample.col(t+1),
                     post_L);
             if (ar_update.template accept(static_cast<const ObsM&>(obs_model),
                     data.col(t), cur_sample.col(t))) {
@@ -288,10 +293,12 @@ namespace schemes {
 
     template<typename TrM, typename ObsM, typename RNG>
     void EmbedHmmSchemeND<TrM, ObsM, RNG>::make_pool(const TrM &trm, const ObsM &obsm, Index t, Index a_cached) {
+        double prop_ld_cached;
         int kt = randint.draw();
         cur_state = cur_sample.col(t);
         pool[kt].col(t) = cur_state;
         ar_update.cur_prop_ld = obsm.logDensity(get_data().col(t), cur_state);
+        prop_ld_cached = ar_update.cur_prop_ld;
         cur_a = a_cached;
 
         for (int k = kt-1; k >= 0 ; --k) {
@@ -306,7 +313,7 @@ namespace schemes {
         }
 
         cur_state = cur_sample.col(t);
-        ar_update.cur_prop_ld = obsm.logDensity(get_data().col(t), cur_state);  // FIXME: look if this can be cached
+        ar_update.cur_prop_ld = prop_ld_cached;
         cur_a = a_cached;
 
         for (int k = kt+1; k < pool_size; ++k) {

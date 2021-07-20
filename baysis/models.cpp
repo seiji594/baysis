@@ -20,7 +20,7 @@ namespace ssmodels {
     LinearModel::LinearModel(std::size_t input_rows,
                              std::size_t input_cols,
                              std::size_t control_size)
-                             : inputM(input_rows, input_cols) {
+            : inputM(input_rows, input_cols) {
         if (control_size != 0) {
             controlM = Matrix(input_rows, control_size);
             controls = Vector(control_size);
@@ -33,7 +33,7 @@ namespace ssmodels {
             : SSModelBase(state_size, seq_length), TransitionModel(state_size, seq_length),
               LinearModel(state_size, state_size, control_size), Q(state_size, state_size),
               Q_inv(state_size, state_size), LQ(state_size), Q_prior(state_size, state_size),
-              Q_prior_inv(state_size, state_size), LQprior(state_size), mu_prior(state_size) { }
+              Q_prior_inv(state_size, state_size), LQprior(state_size), mu_prior(state_size) {}
 
     void LGTransitionStationary::init(const Matrix &A, const Matrix &Cov, const Matrix &B) {
         setInputM(A);
@@ -63,10 +63,10 @@ namespace ssmodels {
                                                      std::size_t state_size,
                                                      std::size_t obs_size,
                                                      std::size_t control_size)
-                                                     : SSModelBase(state_size, seq_length),
-                                                     ObservationModel(obs_size, state_size, seq_length),
-                                                     LinearModel(obs_size, state_size, control_size),
-                                                     R(obs_size, obs_size), R_inv(obs_size, obs_size), LR(obs_size) {}
+            : SSModelBase(state_size, seq_length),
+              ObservationModel(obs_size, state_size, seq_length),
+              LinearModel(obs_size, state_size, control_size),
+              R(obs_size, obs_size), R_inv(obs_size, obs_size), LR(obs_size) {}
 
     void LGObservationStationary::init(const Matrix &C, const Matrix &Cov, const Matrix &D) {
         setInputM(C);
@@ -75,10 +75,34 @@ namespace ssmodels {
         if (!NumericalRcond::isSymmetric(R))
             throw LogicException("Observation model. Covariance matrix not symmetric");
         LR.compute(R);
-        rclimit.checkPD(LR.rcond(), "Observation model. Covariance matrix no PD");
+        rclimit.checkPD(LR.rcond(), "Observation model. Covariance matrix not PD");
         R_inv = R.inverse();
     }
 
 
-}
+    LPObservationStationary::LPObservationStationary(std::size_t seq_length,
+                                                     std::size_t state_size,
+                                                     std::size_t obs_size,
+                                                     std::size_t control_size)
+            : SSModelBase(state_size, seq_length),
+              ObservationModel(obs_size, state_size, seq_length),
+              LinearModel(obs_size, state_size, control_size) { }
 
+    void LPObservationStationary::init(const Matrix &C, const Matrix &D, const Vector &ctrls) {
+        setInputM(C);
+        setControlM(D);
+        setControls(ctrls);
+    }
+
+
+    GPObservationStationary::GPObservationStationary(std::size_t seq_length, std::size_t state_size,
+                                                     std::size_t obs_size, MF mf)
+            : SSModelBase(state_size, seq_length),
+              ObservationModel(obs_size, state_size, seq_length),
+              mean_function(mf), mean(obs_size), coefficients(obs_size) { }
+
+    void GPObservationStationary::init(const Vector &mc) {
+        coefficients = mc;
+    }
+
+}

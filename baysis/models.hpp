@@ -153,8 +153,8 @@ namespace ssmodels
         Vector simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
 
         template<class Derived>
-        Vector& getMean(const Eigen::DenseBase<Derived> &y) const {
-            apply(y);
+        Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
+            apply(x);
             return res;
         }
         const Matrix& getCov() const {
@@ -176,17 +176,80 @@ namespace ssmodels
         Eigen::LLT<Matrix> LR;  // Cholesky decomposition
     };
 
+
+    /**
+    * Generalised linear Poisson stationary observation model. The parameters not changing with time.
+    */
+    class LPObservationStationary: public ObservationModel, public LinearModel {
+    public:
+        typedef int Value_type;
+        typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
+
+        LPObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size,
+                                std::size_t control_size=0);
+
+        void init(const Matrix &C, const Matrix &D = Matrix(), const Vector &ctrls = Vector());
+
+        template<class Derived>
+        Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
+            apply(x);
+            res = exp(res.array());
+            return res;
+        }
+
+        template<typename DerivedA, typename DerivedB>
+        double logDensity(const Eigen::DenseBase<DerivedA> &y, const Eigen::DenseBase<DerivedB> &x) const;
+
+        template<typename RNG>
+        Sample_type simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
+    };
+    /**
+     * Generalised Poisson stationary observation model. he parameters not changing with time.
+     */
+    class GPObservationStationary: public ObservationModel {
+    public:
+        typedef int Value_type;
+        typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
+        using MF = Vector (*)(const Ref<const Vector>&, const Ref<const Vector>&);
+
+        GPObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size, MF mf);
+
+        void init(const Vector& mc);
+
+        template<class Derived>
+        Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
+            mean = mean_function(x, coefficients);
+            return mean;
+        }
+
+        template<typename DerivedA, typename DerivedB>
+        double logDensity(const Eigen::DenseBase<DerivedA> &y, const Eigen::DenseBase<DerivedB> &x) const;
+
+        template<typename RNG>
+        Sample_type simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
+
+    private:
+        MF mean_function;
+        mutable Vector mean;
+        Vector coefficients;
+    };
+
+
+
+
     template <typename Derived>
     void LinearModel::apply(const Eigen::DenseBase<Derived> &vec) const {
-        if (inputM.isDiagonal())
+        if (inputM.isDiagonal()) {
             res = inputM.diagonal().template cwiseProduct(vec.derived());
-        else
+        } else {
             res = inputM * vec.derived();
-        if (controlM.size() != 0)
+        }
+        if (controlM.size() != 0) {
             if (controlM.isDiagonal())
-                res += controlM.diagonal().template cwiseProduct(vec.derived());
+                res += controlM.diagonal().template cwiseProduct(controls);
             else
                 res += controlM * controls;
+        }
     }
 
     template <typename Derived>
@@ -234,6 +297,34 @@ namespace ssmodels
     Vector LGObservationStationary::simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const {
         RandomSample<RNG, std::normal_distribution<> > rsg(rng);
         return NormalDist::sample(getMean(cur_state), LR, rsg);
+    }
+
+
+    template<typename DerivedA, typename DerivedB>
+    double LPObservationStationary::logDensity(const Eigen::DenseBase<DerivedA> &y,
+                                               const Eigen::DenseBase<DerivedB> &x) const {
+        return PoissonDist::logDensity(y, getMean(x).array());
+    }
+
+    template<typename RNG>
+    LPObservationStationary::Sample_type LPObservationStationary::simulate(const Vector &cur_state,
+                                                                           std::shared_ptr<RNG> &rng) const {
+        RandomSample<RNG, std::poisson_distribution<> > rsg(rng);
+        return PoissonDist::sample(getMean(cur_state), rsg);
+    }
+
+
+    template<typename DerivedA, typename DerivedB>
+    double GPObservationStationary::logDensity(const Eigen::DenseBase<DerivedA> &y,
+                                               const Eigen::DenseBase<DerivedB> &x) const {
+        return PoissonDist::logDensity(y, getMean(x).array());
+    }
+
+    template<typename RNG>
+    GPObservationStationary::Sample_type GPObservationStationary::simulate(const Vector &cur_state,
+                                                                           std::shared_ptr<RNG> &rng) const {
+        RandomSample<RNG, std::poisson_distribution<> > rsg(rng);
+        return PoissonDist::sample(getMean(cur_state), rsg);
     }
 
 }

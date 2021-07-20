@@ -114,7 +114,7 @@ public:
                                     const Eigen::DenseBase<DerivedB> &mu,
                                     const Eigen::LLT<DerivedC>& L) {
         double sqstv = L.template solve(x.derived() - mu.derived()).cwiseProduct(x.derived() - mu.derived()).sum();
-        double log_det = log(L.matrixL().toDenseMatrix().diagonal().array()).sum();
+        double log_det = log(L.matrixLLT().diagonal().array()).sum();
         return -log_det - 0.5 * sqstv;
     }
     /**
@@ -163,7 +163,7 @@ public:
  */
 class PoissonDist {
 public:
-    typedef std::poisson_distribution<> Dist_type;
+    typedef std::poisson_distribution<int> Dist_type;
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     /**
      * Returns log density of poisson distribution given the datapoint x; constants are ignored

@@ -68,7 +68,7 @@ int main(int argc, const char * argv[]) {
     cout << "loglikelihood of the sample:\n" << PoissonDist::logLikelihood(pois_sample, 3.4) << endl;
 */
 /*
-    std::size_t n = 15;
+    std::size_t n = 5;
     Matrix A(n,n), L(n, n), eye(Matrix::Identity(n, n));
     Matrix Ainv1(n, n), Ainv2(n, n);
     L.setRandom();
@@ -100,8 +100,9 @@ int main(int argc, const char * argv[]) {
 //    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
 //    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
 */
-    /** Some toy models for testing **/
-    // Set up the model
+
+    //! Some toy models for testing
+   // Set up the model
     Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
     double delta = 0.1;
     A << 1., 0., delta, 0.,
@@ -127,8 +128,9 @@ int main(int argc, const char * argv[]) {
     trm->setPrior(minit, Sinit);
     obsm->init(C, R);
 
-    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
-    std::cout << "Observations:\n" << simulator.getData() << std::endl;
+//    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
+//    std::cout << "Observations:\n" << simulator.getData() << std::endl;
+
 /*
     //! Kalman filter/smoother tests
     // Initialize Kalman filter with covariance scheme
@@ -229,14 +231,38 @@ int main(int argc, const char * argv[]) {
     std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
     std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
 */
+    //! Checking Poisson models
+    size_t xdim = 4, ydim = 4, T=10;
+    Matrix sigma = Vector::Constant(ydim, 0.6).asDiagonal();
+    Matrix D = Matrix::Identity(ydim, ydim);
+    Vector ctrls = Vector::Constant(ydim, -0.4);
+    Vector x = Vector::Random(xdim);
+    // Generalised Poisson
+    auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
+    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, xdim, ydim, mf);
+    gpoi->init(sigma.diagonal());
+    // Linear Poisson
+    std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
+    lpoi->init(sigma, D, ctrls);
+
+//    std::cout << "State:\t" << x.transpose() << std::endl;
+//    std::cout << "Mean:\t" << gpoi.getMean(x).transpose() << std::endl;
+//
+//    Vector_int y = gpoi.simulate(x, rng);
+//
+//    std::cout << "Simulated obs:\t" << y.transpose() << std::endl;
+//    std::cout << "Logdensity: " << gpoi.logDensity(y, x) << std::endl;
+
+    DataGenerator<LGTransitionStationary, GPObservationStationary> simulator_poi(trm, gpoi, 1);
+    std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
 /*
     //! Single state Metropolis sampler
-    using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
+    using Sampler_type = SingleStateScheme<LGTransitionStationary, GPObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
 
-    algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1000, {0.2, 0.8});
+    algos::MCMC<Sampler_type> ssmetropolis(trm, gpoi, sampler, 1000, {0.2, 0.8});
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ssmetropolis.initialise(simulator.getData(), init_x, 1);
+    ssmetropolis.initialise(simulator_poi.getData(), init_x, 1);
     ssmetropolis.run();
 
     for (const auto& s: ssmetropolis.accumulator.samples) {
@@ -249,13 +275,14 @@ int main(int argc, const char * argv[]) {
     }
     std::cout << "\nDuration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
 */
-    //! Embedded HMM sampler
-    using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, LGObservationStationary, std::mt19937>;
-    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5));  // <-- 5 pool states
 
-    algos::MCMC<Sampler_type> ehmm(trm, obsm, sampler, 100, {0.1, 0.3});
+    //! Embedded HMM sampler
+    using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
+    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5, true));  // <-- 5 pool states
+
+    algos::MCMC<Sampler_type> ehmm(trm, gpoi, sampler, 100, {0.1, 0.3}, 1, true);
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ehmm.initialise(simulator.getData(), init_x, 1);
+    ehmm.initialise(simulator_poi.getData(), init_x, 1);
     ehmm.run();
 
     for (const auto& s: ehmm.accumulator.samples) {

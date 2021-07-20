@@ -55,7 +55,7 @@ DataGenerator<TrM, ObsM, RNG>::DataGenerator(const std::shared_ptr<TransitionMod
     }
     std::size_t T(trm->length());
     observations.resize(obm->obsDim(), T);
-    Data_type state(static_cast<const TrM&>(*trm).simulate(static_cast<const TrM&>(*trm).getPriorMean(), rng));
+    Vector state(static_cast<const TrM&>(*trm).simulate(static_cast<const TrM&>(*trm).getPriorMean(), rng));
     observations.col(0) = static_cast<const ObsM&>(*obm).simulate(state, rng);
 
     for (int t = 1; t < T; ++t) {
