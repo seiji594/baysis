@@ -67,7 +67,7 @@ void SampleAccumulator<Scalar>::resize(std::size_t new_sz) {
 
 template<typename Scalar>
 Vector SampleAccumulator<Scalar>::getSmoothedMeans(std::size_t t) {
-    Vector retval;
+    Vector retval = Vector::Zero(samples.front().rows());
 
     for (auto& sample: samples) {
         retval += sample.col(t);

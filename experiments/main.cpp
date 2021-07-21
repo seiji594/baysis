@@ -157,7 +157,7 @@ int main(int argc, const char * argv[]) {
     std::cout << "State means:\n" << state_means << std::endl;
     std::cout << "State covs:\n" << state_covs << std::endl;
 */
-
+/*
     //! Kalman smoother test
     algos::KalmanSmoother<InformationScheme, TwoFilterScheme> kalmsm(trm, obsm);
     kalmsm.initialise(simulator.getData());
@@ -167,7 +167,7 @@ int main(int argc, const char * argv[]) {
     std::cout << "State covs:\n" << kalmsm.post_covs << std::endl;
     std::cout << "Smoothed state means:\n" << kalmsm.smoothed_means << std::endl;
     std::cout << "Smoothed state covs:\n" << kalmsm.smoothed_covs << std::endl;
-
+*/
 /*
     //! Checking Poisson models
     size_t xdim = 4, ydim = 4, T=10;
@@ -194,14 +194,14 @@ int main(int argc, const char * argv[]) {
     DataGenerator<LGTransitionStationary, GPObservationStationary> simulator_poi(trm, gpoi, 1);
     std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
 */
-/*
+
     //! Single state Metropolis sampler
-    using Sampler_type = SingleStateScheme<LGTransitionStationary, GPObservationStationary, std::mt19937>;
+    using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
 
-    algos::MCMC<Sampler_type> ssmetropolis(trm, gpoi, sampler, 1000, {0.2, 0.8});
+    algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1000, {0.2, 0.8});
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ssmetropolis.initialise(simulator_poi.getData(), init_x, 1);
+    ssmetropolis.initialise(simulator.getData(), init_x, 1);
     ssmetropolis.run();
 
     for (const auto& s: ssmetropolis.accumulator.samples) {
@@ -213,7 +213,10 @@ int main(int argc, const char * argv[]) {
         std::cout << acc << "\t";
     }
     std::cout << "\nDuration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
-*/
+
+    std::cout << "Mean at T" << ssmetropolis.accumulator.getSmoothedMeans(9) << std::endl;
+    std::cout << "Cov at T" << ssmetropolis.accumulator.getSmoothedCov(9) << std::endl;
+
 /*
     //! Embedded HMM sampler
     using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
