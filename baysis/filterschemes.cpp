@@ -118,49 +118,46 @@ namespace schemes {
     RtsScheme::RtsScheme(size_t x_size) :
             LinearStateBase(x_size), SmootherBase(x_size), J(x_size, x_size) {}
 
-    void RtsScheme::updateBack(const LGTransitionStationary &lgsm,
+    void RtsScheme::predictBack(const LGTransitionStationary &lgsm,
+                                const Ref<Matrix> &filtered_Xprior,
+                                const Ref<Matrix> &filtered_Xpost) {
+        J.noalias() = filtered_Xpost * lgsm.getA().transpose() * filtered_Xprior.inverse();
+    }
+
+    void RtsScheme::updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
                                const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                                const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost) {
         // Assume the filtered covariances already checked for PD in the filter
-//        Check_Result(J, "In update back step. The current backwards Kalman gain: ");
-        J.noalias() = filtered_Xpost * lgsm.getA().transpose() * filtered_Xprior.inverse();
-//        Check_Result(J, "In update back step. The new backwards Kalman gain: ");
-
-//        Check_Result(X, "In update back step. The current state covariance:");
         X = filtered_Xpost + J * (X - filtered_Xprior) * J.transpose();
-//        Check_Result(X, "In update back step. The new state covariance:");
-
-//        Check_Result(x, "In update back step. The current state:");
         x = filtered_xpost + J * (x - filtered_xprior);
-//        Check_Result(x, "In update back step. The new state:");
     }
 
 
-    TwoWayScheme::TwoWayScheme(size_t x_size) :
+    TwoFilterScheme::TwoFilterScheme(size_t x_size) :
             LinearStateBase(x_size), SmootherBase(x_size),
             Tau(x_size, x_size), theta(x_size),
             temp_D(x_size, x_size), I(Matrix::Identity(x_size, x_size)) {}
 
-    void TwoWayScheme::initInformation(LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+    void TwoFilterScheme::initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
                                        const Ref<Vector> &x_final, const Ref<Matrix> &X_final) {
-        Matrix temp(lgobsm.getC().transpose() * lgobsm.getCovInv());
-        Tau.noalias() = temp * lgobsm.getC();
-        theta.noalias() = temp * y_final;
+        temp_Y.noalias() = lgobsm.getC().transpose() * lgobsm.getCovInv();
+        Tau.noalias() = temp_Y * lgobsm.getC();
+        theta.noalias() = temp_Y * y_final;
         x = x_final;
         X = X_final;
-        temp_Y = Matrix(lgobsm.stateDim(), lgobsm.obsDim());
     }
 
-    void TwoWayScheme::predictBack(LGTransitionStationary &lgsm) {
+    void TwoFilterScheme::predictBack(const LGTransitionStationary &lgsm, const Ref<Matrix> &filtered_Xprior,
+                                      const Ref<Matrix> &filtered_Xpost) {
         Matrix Theta(lgsm.getL().matrixL());
         temp_D = Theta * (I + Theta.transpose() * Tau * Theta).inverse() * Theta.transpose();
         theta = lgsm.getA().transpose() * (I - Tau * temp_D) * theta;
         Tau = lgsm.getA().transpose() * Tau * (I - temp_D * Tau) * lgsm.getA();
     }
 
-    void TwoWayScheme::updateBack(LGObservationStationary &lgobsm, const Ref<Vector> &y,
-                                  const Ref<Vector> &filtered_xprior, const Ref<Matrix> &filtered_Xprior) {
-        temp_Y.noalias() = lgobsm.getC().transpose() * lgobsm.getCovInv();
+    void TwoFilterScheme::updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+                                     const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
+                                     const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost) {
         Tau.noalias() += temp_Y * lgobsm.getC();
         theta.noalias() += temp_Y * y;
         temp_D = filtered_Xprior.inverse();

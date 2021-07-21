@@ -116,34 +116,50 @@ namespace schemes {
     public:
         explicit RtsScheme(size_t x_size);
 
+        void initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+                          const Ref<Vector> &x_final, const Ref<Matrix> &X_final) {
+            init(x_final, X_final);
+        }
+
+        void predictBack(const LGTransitionStationary &lgsm,
+                         const Ref<Matrix> &filtered_Xprior,
+                         const Ref<Matrix> &filtered_Xpost);
+
+        int updateIndex(int idx) { return idx + 1; }
          /**
           * Makes a backward step
-          * @param lgsm - linear gaussian transition model
+          * @param lgobsm - linear gaussian transition model
           * @param filtered_xprior - predicted filtered expected state saved during filter run
           * @param filtered_xpost - posterior filtered expected state saved during filter run
           * @param filtered_Xprior - predicted filtered state covariance saved during filter run
           * @param filtered_Xpost - posterior filtered state covariance saved during filter run
           */
-        void updateBack(const LGTransitionStationary &lgsm,
-                        const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
-                        const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
+         void updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+                         const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
+                         const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
 
         Matrix J;       // Backward Kalman gain
     };
 
     /**
-     * Two-way smoothing scheme.
+     * Two-filter smoothing scheme.
      * [1] Briers M, Doucet A, Maskell S. Smoothing algorithms for state-space models. IEEE Transactions On Signal Processing, 2009
      */
-     class TwoWayScheme: virtual public SmootherBase {
+     class TwoFilterScheme: virtual public SmootherBase {
      public:
-         explicit TwoWayScheme(size_t x_size);
+         explicit TwoFilterScheme(size_t x_size);
 
-         void initInformation(LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
-                              const Ref<Vector> &x_final, const Ref<Matrix> &X_final);
-         void predictBack(LGTransitionStationary &lgsm);
-         void updateBack(LGObservationStationary &lgobsm, const Ref<Vector> &y,
-                         const Ref<Vector> &filtered_xprior, const Ref<Matrix> &filtered_Xprior );
+         void initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+                           const Ref<Vector> &x_final, const Ref<Matrix> &X_final);
+
+         void predictBack(const LGTransitionStationary &lgsm,
+                          const Ref<Matrix> &filtered_Xprior,
+                          const Ref<Matrix> &filtered_Xpost);
+
+         int updateIndex(int idx) { return idx; }
+         void updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+                         const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
+                         const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
 
          Matrix Tau;            // Information matrix
          Vector theta;          // Information vector

@@ -30,6 +30,8 @@ public:
     void addSample(const Sample_type &sample, std::size_t iter);
     void setAcceptances(const Vector_int& acc);
     void setDuration(Timedelta dur);
+    Vector getSmoothedMeans(std::size_t t);
+    Matrix getSmoothedCov(std::size_t t);
     herr_t save(const std::string& fname);
 
 //private:
@@ -61,6 +63,30 @@ void SampleAccumulator<Scalar>::resize(std::size_t new_sz) {
     std::size_t ncols = samples.front().cols();
     std::size_t nrows = samples.front().rows();
     samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
+}
+
+template<typename Scalar>
+Vector SampleAccumulator<Scalar>::getSmoothedMeans(std::size_t t) {
+    Vector retval;
+
+    for (auto& sample: samples) {
+        retval += sample.col(t);
+    }
+
+    return retval / samples.size();
+}
+
+template<typename Scalar>
+Matrix SampleAccumulator<Scalar>::getSmoothedCov(std::size_t t) {
+    std::size_t nrows = samples.front().rows();
+    Matrix retval(nrows, samples.size());
+    Vector means = getSmoothedMeans(t);
+
+    for (int i = 0; i < samples.size(); ++i) {
+        retval.col(i) = samples[i].col(t) - means;
+    }
+
+    return retval * retval.transpose() / samples.size();
 }
 /*
 template<typename Scalar>

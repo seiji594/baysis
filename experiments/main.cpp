@@ -128,11 +128,10 @@ int main(int argc, const char * argv[]) {
     trm->setPrior(minit, Sinit);
     obsm->init(C, R);
 
-//    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
-//    std::cout << "Observations:\n" << simulator.getData() << std::endl;
-
+    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
+    std::cout << "Observations:\n" << simulator.getData() << std::endl;
 /*
-    //! Kalman filter/smoother tests
+    //! Kalman filter tests
     // Initialize Kalman filter with covariance scheme
     CovarianceScheme kf(4, 2);
 
@@ -157,80 +156,19 @@ int main(int argc, const char * argv[]) {
 
     std::cout << "State means:\n" << state_means << std::endl;
     std::cout << "State covs:\n" << state_covs << std::endl;
-
-    // Set up Kalman smoother using data calculated by the filter
-    RtsScheme rts(4);
-    rts.init(state_means.col(9), state_covs.block(0,4*9,4,4));
-
-    Matrix smoothed_means(4, 10);
-    Matrix smoothed_covs(4, 4*10);
-
-    for (int i = 8; i >= 0; --i) {
-        rts.updateBack(*trm,
-                       state_mean_priors.col(i+1),
-                       state_means.col(i),
-                       state_cov_priors.block(0, 4 * (i+1), 4, 4),
-                       state_covs.block(0, 4 * i, 4, 4));
-        smoothed_means.col(i) = rts.x;
-        smoothed_covs.block(0,i*4,4,4) = rts.X;
-    }
-
-    std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
-    std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
-
-    // Set up information filter
-    InformationScheme inff(4, 2);
-    inff.init((*trm).getPriorMean(), (*trm).getPriorCov());
-
-    state_means.setZero();
-    state_mean_priors.setZero();
-    state_covs.setZero();
-    state_cov_priors.setZero();
-
-    state_mean_priors.col(0) = minit;
-    state_cov_priors.block(0, 0, 4, 4) = Sinit;
-
-    simulator.reset();
-
-    for (int i = 0; i < 10; ++i) {
-        if (i != 0) {
-            inff.predict(*trm); // make prediction of the next state's mean and cov
-            state_mean_priors.col(i) = inff.x;
-            state_cov_priors.block(0, i * 4, 4, 4) = inff.X;
-        }
-        inff.observe(*obsm, simulator.next());  // observe data and update the state statistics
-        // Saving results
-        state_means.col(i) = inff.x;
-        state_covs.block(0, i*4, 4, 4) = inff.X;
-    }
-
-    std::cout << "State means:\n" << state_means << std::endl;
-    std::cout << "State covs:\n" << state_covs << std::endl;
-
-    // Set up "two-way filter" smoother
-    TwoWayScheme two(4);
-    //FIXME: make the init API consistent between schemes (init may take obs model in all (but not necessarily use it)
-    // and obs model may have a handle to observations)
-    two.initInformation(*obsm, simulator.at(9),
-                        state_means.col(9),
-                        state_covs.block(0,4*9,4,4));
-
-    smoothed_means.setZero();
-    smoothed_covs.setZero();
-
-    // FIXME: make the smoother API consistent : both should have either one or two functions per cycle
-    for (int i = 8; i >= 0; --i) {
-        two.predictBack(*trm);
-        two.updateBack(*obsm, simulator.at(i),
-                       state_mean_priors.col(i),
-                       state_cov_priors.block(0, 4*i, 4, 4));
-        smoothed_means.col(i) = two.x;
-        smoothed_covs.block(0,i*4,4,4) = two.X;
-    }
-
-    std::cout << "Smoothed state means:\n" << smoothed_means << std::endl;
-    std::cout << "Smoothed state covs:\n" << smoothed_covs << std::endl;
 */
+
+    //! Kalman smoother test
+    algos::KalmanSmoother<InformationScheme, TwoFilterScheme> kalmsm(trm, obsm);
+    kalmsm.initialise(simulator.getData());
+    kalmsm.run();
+
+    std::cout << "State means:\n" << kalmsm.post_means << std::endl;
+    std::cout << "State covs:\n" << kalmsm.post_covs << std::endl;
+    std::cout << "Smoothed state means:\n" << kalmsm.smoothed_means << std::endl;
+    std::cout << "Smoothed state covs:\n" << kalmsm.smoothed_covs << std::endl;
+
+/*
     //! Checking Poisson models
     size_t xdim = 4, ydim = 4, T=10;
     Matrix sigma = Vector::Constant(ydim, 0.6).asDiagonal();
@@ -255,6 +193,7 @@ int main(int argc, const char * argv[]) {
 
     DataGenerator<LGTransitionStationary, GPObservationStationary> simulator_poi(trm, gpoi, 1);
     std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
+*/
 /*
     //! Single state Metropolis sampler
     using Sampler_type = SingleStateScheme<LGTransitionStationary, GPObservationStationary, std::mt19937>;
@@ -275,7 +214,7 @@ int main(int argc, const char * argv[]) {
     }
     std::cout << "\nDuration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
 */
-
+/*
     //! Embedded HMM sampler
     using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5, true));  // <-- 5 pool states
@@ -298,6 +237,6 @@ int main(int argc, const char * argv[]) {
         ++i;
     }
     std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
-
+*/
     return 0;
 }
