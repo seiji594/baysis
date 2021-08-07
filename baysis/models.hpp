@@ -212,7 +212,7 @@ namespace ssmodels
         typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
         using MF = Vector (*)(const Ref<const Vector>&, const Ref<const Vector>&);
 
-        GPObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size, MF mf);
+        GPObservationStationary(std::size_t seq_length, std::size_t m_size, MF mf);
 
         void init(const Vector& mc);
 

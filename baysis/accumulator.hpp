@@ -14,14 +14,13 @@
 #include "Eigen/Dense"
 #include "H5Cpp.h"
 
-using namespace H5;
+//using namespace H5;
 
 
-template<typename Scalar=double>
 class SampleAccumulator {
 public:
     typedef typename decltype(std::chrono::high_resolution_clock::now())::rep Timedelta;
-    typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
+    typedef Matrix Sample_type;
 
     SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
     : samples(nsamples, Sample_type::Zero(nrows, ncols)), accepts() {}
@@ -32,41 +31,38 @@ public:
     void setDuration(Timedelta dur);
     Vector getSmoothedMeans(std::size_t t);
     Matrix getSmoothedCov(std::size_t t);
-    herr_t save(const std::string& fname);
+//    herr_t save(const std::string& fname);
 
 //private:
+//    herr_t write_matrix(const Matrix &mat, const H5::DataSpace &data_space, H5::DataSet &data_set, std::size_t pos);
+
     std::vector<Sample_type> samples;
     std::vector<int> accepts;
     Timedelta duration{};
 
 };
 
-template<typename Scalar>
-void SampleAccumulator<Scalar>::addSample(const Sample_type &sample, std::size_t iter) {
+void SampleAccumulator::addSample(const Sample_type &sample, std::size_t iter) {
     samples[iter] = sample;
 }
 
-template<typename Scalar>
-void SampleAccumulator<Scalar>::setAcceptances(const Vector_int &acc) {
+void SampleAccumulator::setAcceptances(const Vector_int &acc) {
     for (int i = 0; i < acc.size(); ++i) {
         accepts.push_back(acc(i));
     }
 }
 
-template<typename Scalar>
-void SampleAccumulator<Scalar>::setDuration(Timedelta dur) {
+void SampleAccumulator::setDuration(Timedelta dur) {
     duration = dur;
 }
 
-template<typename Scalar>
-void SampleAccumulator<Scalar>::resize(std::size_t new_sz) {
+void SampleAccumulator::resize(std::size_t new_sz) {
     std::size_t ncols = samples.front().cols();
     std::size_t nrows = samples.front().rows();
     samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
 }
 
-template<typename Scalar>
-Vector SampleAccumulator<Scalar>::getSmoothedMeans(std::size_t t) {
+Vector SampleAccumulator::getSmoothedMeans(std::size_t t) {
     Vector retval = Vector::Zero(samples.front().rows());
 
     for (auto& sample: samples) {
@@ -76,8 +72,7 @@ Vector SampleAccumulator<Scalar>::getSmoothedMeans(std::size_t t) {
     return retval / samples.size();
 }
 
-template<typename Scalar>
-Matrix SampleAccumulator<Scalar>::getSmoothedCov(std::size_t t) {
+Matrix SampleAccumulator::getSmoothedCov(std::size_t t) {
     std::size_t nrows = samples.front().rows();
     Matrix retval(nrows, samples.size());
     Vector means = getSmoothedMeans(t);
@@ -89,33 +84,52 @@ Matrix SampleAccumulator<Scalar>::getSmoothedCov(std::size_t t) {
     return retval * retval.transpose() / samples.size();
 }
 /*
-template<typename Scalar>
+herr_t
+SampleAccumulator<Scalar>::write_matrix(const Matrix &mat, const H5::DataSpace &data_space,
+                                        H5::DataSet &data_set, std::size_t pos) {
+    std::size_t rows = mat.rows();
+    std::size_t cols = mat.cols();
+    std::size_t stride = mat.colStride();
+    hsize_t fstride[3] = {1, cols, rows};
+    hsize_t fcount[3] = {1, 1, 1};
+    hsize_t fblock[3] = {1, cols, rows};
+    hsize_t fstart[3] = {pos, 0, 0};
+    hsize_t mdim[2] = {stride, cols};
+    H5::DataSpace mem_space(2, mdim);
+    data_space.selectHyperslab(H5S_SELECT_SET, fcount, fstart, fstride, fblock);
+    data_set.write(mat.data(), H5::PredType::NATIVE_DOUBLE, mem_space, data_space);
+    return 1;
+}
+
 herr_t SampleAccumulator<Scalar>::save(const std::string& fname) {
     const H5std_string file_name("../data/"+fname+".h5");
     const H5std_string dset_name("samples");
     std::size_t dim1 = samples.size();
     std::size_t dim2 = samples.back().rows();
     std::size_t dim3 = samples.back().cols();
-    hsize_t dims[3] = {dim1, dim2, dim3};
-    double data[dim1][dim2][dim3];
+    hsize_t dims[3] = {dim1, dim3, dim2};
 
     try {
-        Exception::dontPrint();
-        H5File file(file_name, H5F_ACC_TRUNC);
-        DataSpace dspace(3, dims);
-        DataSet dset(file.createDataSet(dset_name, H5T_NATIVE_DOUBLE, dspace));
-        dset.write(&samples, H5T_NATIVE_DOUBLE);
+//        Exception::dontPrint();
+        H5::H5File file(file_name, H5F_ACC_TRUNC);
+        H5::DataSpace dspace(3, dims);
+        H5::DataSet dset(file.createDataSet(dset_name, H5::PredType::NATIVE_DOUBLE, dspace));
+
+        for (std::size_t i=0; i < samples.size(); ++i) {
+            write_matrix(samples[i], dspace, dset, i);
+        }
+
         dspace.close();
         dset.close();
         file.close();
-    } catch (FileIException err) {
-        err.printErrorStack();
+    } catch (H5::FileIException& err) {
+        H5::FileIException::printErrorStack();
         return -1;
-    } catch (DataSetIException err) {
-        err.printErrorStack();
+    } catch (H5::DataSetIException& err) {
+        H5::DataSetIException::printErrorStack();
         return -1;
-    } catch (DataSpaceIException err) {
-        err.printErrorStack();
+    } catch (H5::DataSpaceIException& err) {
+        H5::DataSpaceIException::printErrorStack();
         return -1;
     }
     return 1;

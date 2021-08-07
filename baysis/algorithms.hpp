@@ -57,9 +57,11 @@ namespace algos {
 
         void initialise(const Data_type& observations, const Sample_type& x_init, u_long seed = 0);
         void run();
+        SampleAccumulator& getSamples() { return accumulator; }
+        // FIXME: add reset function; pass seed to it (or to run); avoid re-computing quantities each reset
 
-        SampleAccumulator<typename Sample_type::Scalar> accumulator;
     private:
+        SampleAccumulator accumulator;
         const std::shared_ptr<TransitionModel> transitionM;
         const std::shared_ptr<ObservationModel> observationM;
         std::shared_ptr<Scheme> sampler;

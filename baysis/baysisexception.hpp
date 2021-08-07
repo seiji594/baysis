@@ -62,7 +62,6 @@ void Check_Result(const PT& res, const char* msg) {
 #ifndef NDEBUG
     std::cout << msg << std::endl << res << std::endl;
 #endif
-
 }
 
 #endif //BAYSIS_BAYSISEXCEPTION_HPP

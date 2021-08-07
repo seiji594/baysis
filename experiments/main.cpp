@@ -177,7 +177,7 @@ int main(int argc, const char * argv[]) {
     Vector x = Vector::Random(xdim);
     // Generalised Poisson
     auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
-    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, xdim, ydim, mf);
+    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
     gpoi->init(sigma.diagonal());
     // Linear Poisson
     std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
@@ -203,19 +203,20 @@ int main(int argc, const char * argv[]) {
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
     ssmetropolis.initialise(simulator.getData(), init_x, 1);
     ssmetropolis.run();
+    SampleAccumulator& accumulator = ssmetropolis.getSamples();
 
-    for (const auto& s: ssmetropolis.accumulator.samples) {
+    for (const auto& s: accumulator.samples) {
         std::cout << s << std::endl;
     }
 
     std::cout << "Acceptances:" << std::endl;
-    for (auto& acc: ssmetropolis.accumulator.accepts) {
+    for (auto& acc: accumulator.accepts) {
         std::cout << acc << "\t";
     }
-    std::cout << "\nDuration: " << ssmetropolis.accumulator.duration << "ms" << std::endl;
+    std::cout << "\nDuration: " << accumulator.duration << "ms" << std::endl;
 
-    std::cout << "Mean at T" << ssmetropolis.accumulator.getSmoothedMeans(9) << std::endl;
-    std::cout << "Cov at T" << ssmetropolis.accumulator.getSmoothedCov(9) << std::endl;
+    std::cout << "Mean at T" << accumulator.getSmoothedMeans(9) << std::endl;
+    std::cout << "Cov at T" << accumulator.getSmoothedCov(9) << std::endl;
 
 /*
     //! Embedded HMM sampler
@@ -241,5 +242,6 @@ int main(int argc, const char * argv[]) {
     }
     std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
 */
+
     return 0;
 }

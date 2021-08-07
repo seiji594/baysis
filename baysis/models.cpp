@@ -95,11 +95,10 @@ namespace ssmodels {
     }
 
 
-    GPObservationStationary::GPObservationStationary(std::size_t seq_length, std::size_t state_size,
-                                                     std::size_t obs_size, MF mf)
-            : SSModelBase(state_size, seq_length),
-              ObservationModel(obs_size, state_size, seq_length),
-              mean_function(mf), mean(obs_size), coefficients(obs_size) { }
+    GPObservationStationary::GPObservationStationary(std::size_t seq_length, std::size_t m_size, MF mf)
+            : SSModelBase(m_size, seq_length),
+              ObservationModel(m_size, m_size, seq_length),
+              mean_function(mf), mean(m_size), coefficients(m_size) { }
 
     void GPObservationStationary::init(const Vector &mc) {
         coefficients = mc;
