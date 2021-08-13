@@ -241,7 +241,7 @@ ctypedef fused MapOptions:
     Aligned
     Unaligned
 
-cdef extern from "eigency_cpp.h" namespace "eigency":
+cdef extern from "eigency_cpp.hpp" namespace "eigency":
 
      cdef cppclass _1 "1":
           pass
@@ -363,7 +363,7 @@ cdef extern from "eigency_cpp.h" namespace "eigency":
      cdef np.ndarray ndarray(PlainObjectBase &)
 
 
-cdef extern from "eigency_cpp.h" namespace "Eigen":
+cdef extern from "eigency_cpp.hpp" namespace "Eigen":
 
      cdef cppclass Dynamic:
           pass

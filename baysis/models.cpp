@@ -32,8 +32,8 @@ namespace ssmodels {
                                                    std::size_t control_size)
             : SSModelBase(state_size, seq_length), TransitionModel(state_size, seq_length),
               LinearModel(state_size, state_size, control_size), Q(state_size, state_size),
-              Q_inv(state_size, state_size), LQ(state_size), Q_prior(state_size, state_size),
-              Q_prior_inv(state_size, state_size), LQprior(state_size), mu_prior(state_size) {}
+              Q_inv(state_size, state_size), Q_prior(state_size, state_size), Q_prior_inv(state_size, state_size),
+              mu_prior(state_size), LQ(state_size), LQprior(state_size) {}
 
     void LGTransitionStationary::init(const Matrix &A, const Matrix &Cov, const Matrix &B) {
         setInputM(A);

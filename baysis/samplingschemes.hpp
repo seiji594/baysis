@@ -46,10 +46,11 @@ namespace schemes {
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
 
-        void init(const Data_type &observations, const TransitionModel &tr_model, u_long seed);
+        void init(const Data_type &observations, const TransitionModel &tr_model);
         void setScales(const std::vector<double>& scales) { scalings = scales; }
         void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
         void updateIter(int i) { ar_update.eps = scalings[i % scalings.size()]; }
+        void reset(u_long seed);
         void reverseObservations() { }
         void setReversed() { }
 
@@ -80,9 +81,10 @@ namespace schemes {
 
         explicit EmbedHmmSchemeND(Index psize, bool flip=false) : pool_size(psize), noflip(!flip) { }
 
-        void init(const Data_type& observations, const TransitionModel &tr_model, u_long seed);
+        void init(const Data_type &observations, const TransitionModel &tr_model);
         void setScales(const std::vector<double>& scales) { scalings = scales; }
         void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
+        void reset(u_long seed);
         void updateIter(int i) {}
         void reverseObservations() { data_rev = data.rowwise().reverse(); }
         void setReversed() { reversed = !reversed; }
@@ -144,8 +146,7 @@ namespace schemes {
     }
 
     template<typename TrM, typename ObsM, typename RNG>
-    void SingleStateScheme<TrM, ObsM, RNG>::init(const Data_type &observations,
-                                                 const TransitionModel &tr_model, u_long seed) {
+    void SingleStateScheme<TrM, ObsM, RNG>::init(const Data_type &observations, const TransitionModel &tr_model) {
         // Initialise
         const TrM& lg_transition = static_cast<const TrM&>(tr_model);
         data = observations;
@@ -161,9 +162,12 @@ namespace schemes {
         scaled_post_mean.noalias() = post_cov * lg_transition.getA().transpose() * lg_transition.getCovInv();
         post_L.compute(post_cov);
 
-        acceptances.setZero(tr_model.length());
-        // Setup the update scheme
+        acceptances.resize(tr_model.length());
         ar_update.proposal.resize(tr_model.stateDim());
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void SingleStateScheme<TrM, ObsM, RNG>::reset(u_long seed) {
         std::shared_ptr<RNG> rng;
         if (seed != 0) {
             rng = std::make_shared<RNG>(GenericPseudoRandom<RNG>::makeRnGenerator(seed));
@@ -172,6 +176,7 @@ namespace schemes {
         }
         ar_update.uniform = RandomSample<RNG, std::uniform_real_distribution<> >(rng);
         ar_update.norm = RandomSample<RNG, std::normal_distribution<> >(rng);
+        acceptances.setZero();
     }
 
 
@@ -214,26 +219,29 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    void EmbedHmmSchemeND<TrM, ObsM, RNG>::init(const EmbedHmmSchemeND::Data_type &observations,
-                                                const TransitionModel &tr_model, u_long seed) {
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::init(const Data_type &observations, const TransitionModel &tr_model) {
         // Initialise
         data = observations;
         cur_state.resize(tr_model.stateDim());
         acceptances.setZero(2*tr_model.length());
         pool_ld.resize(pool_size);
         pool = std::vector<Sample_type>(pool_size, Sample_type(tr_model.stateDim(), tr_model.length()));
+        ar_update.proposal.resize(tr_model.stateDim());
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::reset(u_long seed) {
         std::shared_ptr<RNG> rng;
         if (seed != 0) {
             rng = std::make_shared<RNG>(GenericPseudoRandom<RNG>::makeRnGenerator(seed));
         } else {
             rng = std::make_shared<RNG>(GenericPseudoRandom<RNG>::makeRnGenerator());
         }
-        const std::uniform_int_distribution<Index> uintdist(0, pool_size-1);
+        const std::uniform_int_distribution<Index> uintdist(0, this->pool_size - 1);
         randint = RandomSample<RNG, std::uniform_int_distribution<Index> >(rng, uintdist);
-        // Setup the update scheme
         ar_update.uniform = RandomSample<RNG, std::uniform_real_distribution<> >(rng);
         ar_update.norm = RandomSample<RNG, std::normal_distribution<> >(rng);
-        ar_update.proposal.resize(tr_model.stateDim());
+        acceptances.setZero();
     }
 
     template<typename TrM, typename ObsM, typename RNG>

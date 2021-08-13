@@ -15,6 +15,8 @@
 
 using ssmodels::TransitionModel;
 using ssmodels::ObservationModel;
+using ssmodels::LGTransitionStationary;
+using ssmodels::LGObservationStationary;
 
 
 namespace algos {
@@ -55,10 +57,10 @@ namespace algos {
              const std::vector<double> &scalings = std::vector<double>(1, 1.), int thinning_factor = 1,
              bool reverse = false);
 
-        void initialise(const Data_type& observations, const Sample_type& x_init, u_long seed = 0);
+        void initialise(const Data_type &observations, const Sample_type &x_init, u_long seed=0);
+        void reset(const Sample_type &x_init, u_long seed=0);
         void run();
-        SampleAccumulator& getSamples() { return accumulator; }
-        // FIXME: add reset function; pass seed to it (or to run); avoid re-computing quantities each reset
+        const SampleAccumulator& getStatistics() const { return accumulator; }
 
     private:
         SampleAccumulator accumulator;
@@ -144,6 +146,7 @@ namespace algos {
                        : accumulator(tr_model->stateDim(), tr_model->length(), 1+N/thinning_factor),
                        transitionM(tr_model), observationM(obs_model), sampler(sampling_scheme),
                        numiter(N), thin(thinning_factor), run_reversed(reverse), scaling(scalings) {
+        sampler->setScales(scaling);
         if (run_reversed) {
             std::size_t acc_size = 1 + numiter / thin;
             accumulator.resize(acc_size);
@@ -152,12 +155,18 @@ namespace algos {
 
 
     template<typename Scheme>
-    inline void MCMC<Scheme>::initialise(const Data_type& observations, const Sample_type& x_init, u_long seed) {
-        sampler->cur_sample = x_init;
-        sampler->init(observations, *transitionM, seed);
-        sampler->setScales(scaling);
+    void MCMC<Scheme>::initialise(const Data_type &observations, const Sample_type &x_init, u_long seed) {
+        sampler->init(observations, *transitionM);
         if (run_reversed)
             sampler->reverseObservations();
+        reset(x_init, seed);
+    }
+
+    template<typename Scheme>
+    void MCMC<Scheme>::reset(const Sample_type &x_init, u_long seed) {
+        sampler->cur_sample = x_init;
+        sampler->reset(seed);
+        accumulator.reset();
     }
 
     template<typename Scheme>

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 project(Baysis)
 
 set(CMAKE_CXX_STANDARD 14)
-set (FIND_HDF_COMPONENTS C CXX shared)
+#set (FIND_HDF_COMPONENTS C CXX shared)
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 #find_package (HDF5 NAMES "hdf5" COMPONENTS ${FIND_HDF_COMPONENTS})

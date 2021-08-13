@@ -33,11 +33,11 @@ public:
 
     Ref<Data_type> next() override;
     Ref<Data_type> at(std::size_t t);
-    Sample_type getData() const { return observations; }
+    Sample_type& getData() const { return observations; }
     void reset() { cur_t = 0; }
 
 private:
-    Sample_type observations;
+    mutable Sample_type observations;
     std::size_t cur_t;
 };
 
@@ -69,7 +69,7 @@ template<typename TrM, typename ObsM, typename RNG>
 Ref<typename DataGenerator<TrM, ObsM, RNG>::Data_type> DataGenerator<TrM, ObsM, RNG>::next() {
     if (cur_t >= observations.cols())
         throw LogicException("Iterator is beyond the last datapoint");
-    return observations.col(cur_t++); //obs[cur_t++];
+    return observations.col(cur_t++);
 }
 
 template<typename TrM, typename ObsM, typename RNG>

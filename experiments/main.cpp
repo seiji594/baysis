@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <unordered_map>
 #include "../baysis/probsupport.hpp"
 #include "../baysis/filterschemes.cpp"
 #include "../baysis/samplingschemes.hpp"
@@ -203,17 +204,17 @@ int main(int argc, const char * argv[]) {
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
     ssmetropolis.initialise(simulator.getData(), init_x, 1);
     ssmetropolis.run();
-    SampleAccumulator& accumulator = ssmetropolis.getSamples();
+    const SampleAccumulator& accumulator = ssmetropolis.getStatistics();
 
-    for (const auto& s: accumulator.samples) {
+    for (const auto& s: accumulator.getSamples()) {
         std::cout << s << std::endl;
     }
 
     std::cout << "Acceptances:" << std::endl;
-    for (auto& acc: accumulator.accepts) {
+    for (auto& acc: accumulator.getAcceptances()) {
         std::cout << acc << "\t";
     }
-    std::cout << "\nDuration: " << accumulator.duration << "ms" << std::endl;
+    std::cout << "\nDuration: " << accumulator.totalDuration() << "ms" << std::endl;
 
     std::cout << "Mean at T" << accumulator.getSmoothedMeans(9) << std::endl;
     std::cout << "Cov at T" << accumulator.getSmoothedCov(9) << std::endl;

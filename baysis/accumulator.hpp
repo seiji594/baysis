@@ -29,17 +29,20 @@ public:
     void addSample(const Sample_type &sample, std::size_t iter);
     void setAcceptances(const Vector_int& acc);
     void setDuration(Timedelta dur);
-    Vector getSmoothedMeans(std::size_t t);
-    Matrix getSmoothedCov(std::size_t t);
+    void reset();
+    Vector getSmoothedMeans(std::size_t t) const;
+    Matrix getSmoothedCov(std::size_t t) const;
+    const std::vector<Sample_type>& getSamples() const;
+    const std::vector<int>& getAcceptances() const;
+    Timedelta totalDuration() const;
 //    herr_t save(const std::string& fname);
 
-//private:
+private:
 //    herr_t write_matrix(const Matrix &mat, const H5::DataSpace &data_space, H5::DataSet &data_set, std::size_t pos);
 
     std::vector<Sample_type> samples;
     std::vector<int> accepts;
     Timedelta duration{};
-
 };
 
 void SampleAccumulator::addSample(const Sample_type &sample, std::size_t iter) {
@@ -62,7 +65,11 @@ void SampleAccumulator::resize(std::size_t new_sz) {
     samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
 }
 
-Vector SampleAccumulator::getSmoothedMeans(std::size_t t) {
+void SampleAccumulator::reset() {
+    accepts.clear();
+}
+
+Vector SampleAccumulator::getSmoothedMeans(std::size_t t) const {
     Vector retval = Vector::Zero(samples.front().rows());
 
     for (auto& sample: samples) {
@@ -72,7 +79,7 @@ Vector SampleAccumulator::getSmoothedMeans(std::size_t t) {
     return retval / samples.size();
 }
 
-Matrix SampleAccumulator::getSmoothedCov(std::size_t t) {
+Matrix SampleAccumulator::getSmoothedCov(std::size_t t) const {
     std::size_t nrows = samples.front().rows();
     Matrix retval(nrows, samples.size());
     Vector means = getSmoothedMeans(t);
@@ -82,6 +89,18 @@ Matrix SampleAccumulator::getSmoothedCov(std::size_t t) {
     }
 
     return retval * retval.transpose() / samples.size();
+}
+
+const std::vector<SampleAccumulator::Sample_type>& SampleAccumulator::getSamples() const {
+    return samples;
+}
+
+const std::vector<int> &SampleAccumulator::getAcceptances() const {
+    return accepts;
+}
+
+SampleAccumulator::Timedelta SampleAccumulator::totalDuration() const {
+    return duration;
 }
 /*
 herr_t

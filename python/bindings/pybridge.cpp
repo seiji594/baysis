@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "samplingschemes.hpp"
 #include "algorithms.hpp"
+#include "dataprovider.hpp"
 
 using namespace schemes;
 using namespace algos;
@@ -81,14 +82,21 @@ std::shared_ptr<GPObservationStationary> make_model(std::size_t length, const Ei
 }
 
 
-typedef std::unordered_map<std::string, Matrix> Smoother_result;
+typedef std::unordered_map<std::string, Matrix*> Smoother_result;
 
 template<typename F, typename S>
-std::shared_ptr<Smoother_result> get_smoothing_dist(const std::shared_ptr<LGTransitionStationary>& trm,
-                                                    const std::shared_ptr<LGObservationStationary>& obsm,
-                                                    const Eigen::Map<Matrix>& data) {
+Smoother_result get_smoothing_dist(const std::shared_ptr<LGTransitionStationary>& trm,
+                                   const std::shared_ptr<LGObservationStationary>& obsm,
+                                   const Eigen::Map<Matrix>& data) {
     KalmanSmoother<F, S> ks(trm, obsm);
     ks.initialise(data);
     ks.run();
-    return std::make_shared<Smoother_result>({{"sm_means", ks.smoothed_means}, {"sm_covs", ks.smoothed_covs}});
+    return {{"sm_means", &ks.smoothed_means}, {"sm_covs", &ks.smoothed_covs}};
+}
+
+
+template<typename TrM, typename ObsM>
+Eigen::PlainObjectBase& generate_data(const TrM& trm, const ObsM& obsm, int seed=0) {
+    DataGenerator<TrM, ObsM> dg{trm, obsm, seed};
+    return dg.getData();
 }
