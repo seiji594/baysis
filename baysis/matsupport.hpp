@@ -11,9 +11,11 @@
 #define BAYSIS_MATSUPPORT_HPP
 
 #include <Eigen/Dense>
+#include "baysisexception.hpp"
 
 
 typedef Eigen::MatrixXd Matrix;
+typedef Eigen::MatrixXi Matrix_int;
 typedef Eigen::VectorXd Vector;
 typedef Eigen::VectorXi Vector_int;
 typedef Eigen::ArrayXd Array;

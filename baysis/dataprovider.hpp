@@ -27,8 +27,8 @@ public:
     typedef typename DataProvider<typename ObsM::Value_type>::Data_type Data_type;
     typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
 
-    DataGenerator(const std::shared_ptr<TransitionModel> &trm,
-                  const std::shared_ptr<ObservationModel> &obm,
+    DataGenerator(const std::shared_ptr<ssmodels::TransitionModel> &trm,
+                  const std::shared_ptr<ssmodels::ObservationModel> &obm,
                   u_long seed=0);
 
     Ref<Data_type> next() override;
@@ -43,8 +43,8 @@ private:
 
 
 template<typename TrM, typename ObsM, typename RNG>
-DataGenerator<TrM, ObsM, RNG>::DataGenerator(const std::shared_ptr<TransitionModel> &trm,
-                                             const std::shared_ptr<ObservationModel> &obm,
+DataGenerator<TrM, ObsM, RNG>::DataGenerator(const std::shared_ptr<ssmodels::TransitionModel> &trm,
+                                             const std::shared_ptr<ssmodels::ObservationModel> &obm,
                                              u_long seed) : cur_t(0) {
     std::shared_ptr<RNG> rng;
     if (seed != 0) {
@@ -53,14 +53,14 @@ DataGenerator<TrM, ObsM, RNG>::DataGenerator(const std::shared_ptr<TransitionMod
     else {
         rng = std::make_shared<RNG>(GenericPseudoRandom<RNG>::makeRnGenerator());
     }
-    std::size_t T(trm->length());
+    std::size_t T{trm->length()};
     observations.resize(obm->obsDim(), T);
-    Vector state(static_cast<const TrM&>(*trm).simulate(static_cast<const TrM&>(*trm).getPriorMean(), rng));
-    observations.col(0) = static_cast<const ObsM&>(*obm).simulate(state, rng);
+    Vector state(static_cast<const TrM &>(*trm).simulate(static_cast<const TrM &>(*trm).getPriorMean(), rng, true));
+    observations.col(0) = static_cast<const ObsM &>(*obm).simulate(state, rng);
 
     for (int t = 1; t < T; ++t) {
-        state = static_cast<const TrM&>(*trm).simulate(state, rng);
-        observations.col(t) = static_cast<const ObsM&>(*obm).simulate(state, rng);
+        state = static_cast<const TrM &>(*trm).simulate(state, rng);
+        observations.col(t) = static_cast<const ObsM &>(*obm).simulate(state, rng);
     }
 
 }

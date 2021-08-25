@@ -21,6 +21,17 @@ using ssmodels::LGObservationStationary;
 
 namespace algos {
 
+    class IMcmc {
+    public:
+        virtual ~IMcmc() = default;
+        virtual void initialise(const Matrix &observations) = 0;
+        virtual void initialise(const Matrix_int &observations) = 0;
+        virtual void reset(const Matrix &x_init, u_long seed) = 0;
+        virtual void run() = 0;
+        virtual const SampleAccumulator& getStatistics() const = 0;
+    };
+
+
     template<typename Filter, typename Smoother>
     class KalmanSmoother {
     public:
@@ -47,7 +58,7 @@ namespace algos {
 
 
     template<typename Scheme>
-    class MCMC {
+    class MCMC: public IMcmc {
     public:
         typedef typename Scheme::Data_type Data_type;
         typedef typename Scheme::Sample_type Sample_type;
@@ -59,8 +70,8 @@ namespace algos {
 
         void initialise(const Data_type &observations, const Sample_type &x_init, u_long seed=0);
         void reset(const Sample_type &x_init, u_long seed=0);
-        void run();
-        const SampleAccumulator& getStatistics() const { return accumulator; }
+        void run() override;
+        const SampleAccumulator& getStatistics() const override { return accumulator; }
 
     private:
         SampleAccumulator accumulator;
@@ -148,7 +159,7 @@ namespace algos {
                        numiter(N), thin(thinning_factor), run_reversed(reverse), scaling(scalings) {
         sampler->setScales(scaling);
         if (run_reversed) {
-            std::size_t acc_size = 1 + numiter / thin;
+            std::size_t acc_size = 1 + 2 * numiter / thin;
             accumulator.resize(acc_size);
         }
     }
@@ -159,7 +170,6 @@ namespace algos {
         sampler->init(observations, *transitionM);
         if (run_reversed)
             sampler->reverseObservations();
-        reset(x_init, seed);
     }
 
     template<typename Scheme>

@@ -16,6 +16,20 @@ using namespace ssmodels;
 
 namespace schemes {
 
+    class ISampler {
+    public:
+        virtual ~ISampler() = default;
+        virtual void init(const Matrix_int& observations, const TransitionModel &tr_model) = 0;
+        virtual void init(const Matrix& observations, const TransitionModel &tr_model) = 0;
+        virtual void setScales(const std::vector<double>& scales) = 0;
+        virtual void reset(u_long seed) = 0;
+        virtual void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) = 0;
+        virtual void updateIter(int i) { }
+        virtual void reverseObservations() { }
+        virtual void setReversed() { }
+    };
+
+
     template<typename ObsM,typename RNG>
     struct AutoregressiveUpdate {
         template<typename DerivedA, typename DerivedB>
@@ -41,18 +55,18 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    class SingleStateScheme {
+    class SingleStateScheme: public ISampler {
     public:
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
 
         void init(const Data_type &observations, const TransitionModel &tr_model);
-        void setScales(const std::vector<double>& scales) { scalings = scales; }
-        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
-        void updateIter(int i) { ar_update.eps = scalings[i % scalings.size()]; }
-        void reset(u_long seed);
-        void reverseObservations() { }
-        void setReversed() { }
+        void setScales(const std::vector<double>& scales) override { scalings = scales; }
+        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
+        void updateIter(int i) override { ar_update.eps = scalings[i % scalings.size()]; }
+        void reset(u_long seed) override;
+//        void reverseObservations() { }
+//        void setReversed() { }
 
         Sample_type cur_sample;
         Vector_int acceptances;
@@ -71,7 +85,7 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    class EmbedHmmSchemeND {
+    class EmbedHmmSchemeND: public ISampler{
         enum {even, odd};
     public:
         typedef std::size_t Index;
@@ -82,12 +96,12 @@ namespace schemes {
         explicit EmbedHmmSchemeND(Index psize, bool flip=false) : pool_size(psize), noflip(!flip) { }
 
         void init(const Data_type &observations, const TransitionModel &tr_model);
-        void setScales(const std::vector<double>& scales) { scalings = scales; }
-        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
-        void reset(u_long seed);
-        void updateIter(int i) {}
-        void reverseObservations() { data_rev = data.rowwise().reverse(); }
-        void setReversed() { reversed = !reversed; }
+        void setScales(const std::vector<double>& scales) override { scalings = scales; }
+        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
+        void reset(u_long seed) override;
+//        void updateIter(int i) {}
+        void reverseObservations() override { data_rev = data.rowwise().reverse(); }
+        void setReversed() override { reversed = !reversed; }
 
         Sample_type cur_sample;
         Vector_int acceptances;

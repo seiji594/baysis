@@ -90,7 +90,7 @@ namespace ssmodels
         double logDensity(const Eigen::DenseBase<DerivedA> &curx, const Eigen::DenseBase<DerivedB> &prevx) const;
 
         template<typename RNG>
-        Vector simulate(const Vector& prev_state, std::shared_ptr<RNG> &rng) const;
+        Vector simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng, bool prior=false) const;
 
         template<class Derived>
         Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
@@ -281,9 +281,9 @@ namespace ssmodels
     }
 
     template<typename RNG>
-    Vector LGTransitionStationary::simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng) const {
+    Vector LGTransitionStationary::simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng, bool prior) const {
         RandomSample<RNG, std::normal_distribution<> > rsg(rng);
-        return NormalDist::sample(getMean(prev_state), LQ, rsg);
+        return NormalDist::sample(getMean(prev_state), prior ? LQprior : LQ, rsg);
     }
 
 
