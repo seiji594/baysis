@@ -10,11 +10,14 @@
 #define BAYSIS_FILTERSCHEMES_HPP
 
 #include "matsupport.hpp"
-#include "models.cpp"
+#include "models.hpp"
 
 using Eigen::Ref;
 using ssmodels::LGTransitionStationary;
 using ssmodels::LGObservationStationary;
+
+enum class FilterScheme: std::size_t { cov=1, info };
+enum class SmootherScheme: std::size_t { rts=1, twofilter };
 
 
 namespace schemes {
@@ -64,6 +67,7 @@ namespace schemes {
         CovarianceScheme(std::size_t x_size, std::size_t y_size);
 
         void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        static std::size_t Id() { return static_cast<size_t>(FilterScheme::cov); }
 
         Matrix S;		// Innovation Covariance
         Matrix K;		// Kalman Gain
@@ -89,6 +93,7 @@ namespace schemes {
         void initInformation (const Ref<Vector> &eta, const Ref<Matrix> &Lambda);  // Initialize with information directly
         void predict(LGTransitionStationary &lgsm) override;
         void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        static std::size_t Id() { return static_cast<size_t>(FilterScheme::info); }
 
         Vector e;				// Information state
         Matrix La;       		// Information
@@ -138,6 +143,8 @@ namespace schemes {
                          const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                          const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
 
+         static std::size_t Id() { return static_cast<size_t>(SmootherScheme::rts); }
+
         Matrix J;       // Backward Kalman gain
     };
 
@@ -160,6 +167,8 @@ namespace schemes {
          void updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
                          const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                          const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
+
+         static std::size_t Id() { return static_cast<size_t>(SmootherScheme::twofilter); }
 
          Matrix Tau;            // Information matrix
          Vector theta;          // Information vector

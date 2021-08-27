@@ -58,6 +58,58 @@ struct FactorySubscriber_1<id, M, typelist::tlist<S_H, S_Ts...>, Factory, Creato
 };
 
 
+// Factory subscriber for templated classes with two template arguments
+template<template<class, class> class C, typename P1, typename P2, typename Factory, typename Creator>
+struct FactorySubscriber_2 {
+private:
+    typedef FactorySubscriber_2<C, P1, P2, Factory, Creator> This_type;
+    enum { EmptyList = (typelist::is_tlist<P1>::value && typelist::is_tlist_empty<P1>::value) ||
+            (typelist::is_tlist<P2>::value && typelist::is_tlist_empty<P2>::value) };
+
+    template<template<class, class> class C_1, typename P1_1, typename P2_1, typename Factory_1, typename Creator_1>
+    static bool subscribe(Factory_1* f, Int2Type<true>) {
+        return true;
+    }
+
+    template<template<class, class> class C_1, typename P1_1, typename P2_1, typename Factory_1, typename Creator_1>
+    static bool subscribe(Factory_1* f, Int2Type<false>) {
+        return f->subscribe(C_1<P1_1, P2_1>::Id(), Creator_1::template create<C_1<P1_1, P2_1> >);
+    }
+
+public:
+    static bool subscribe(Factory* f) {
+        return This_type::subscribe<C, P1, P2, Factory, Creator>(f, Int2Type<EmptyList>());
+    }
+};
+
+// Specialisations for typelists
+template<template<class, class> class C, typename P1_H, typename... P1_Ts, typename P2_H, typename... P2_Ts, typename Factory, typename Creator>
+struct FactorySubscriber_2<C, typelist::tlist<P1_H, P1_Ts...>, typelist::tlist<P2_H, P2_Ts...>, Factory, Creator> {
+    static bool subscribe(Factory* f) {
+        return FactorySubscriber_2<C, P1_H, P2_H, Factory, Creator>::subscribe(f) &&
+                FactorySubscriber_2<C, P1_H, typelist::tlist<P2_Ts...>, Factory, Creator>::subscribe(f) &&
+                FactorySubscriber_2<C, typelist::tlist<P1_Ts...>, P2_H, Factory, Creator>::subscribe(f) &&
+                FactorySubscriber_2<C, typelist::tlist<P1_Ts...>, typelist::tlist<P2_Ts...>, Factory, Creator>::subscribe(f);
+    }
+};
+
+template<template<class, class> class C, typename P1_H, typename... P1_Ts, typename P2, typename Factory, typename Creator>
+struct FactorySubscriber_2<C, typelist::tlist<P1_H, P1_Ts...>, P2, Factory, Creator> {
+    static bool subscribe(Factory* f) {
+        return FactorySubscriber_2<C, P1_H, P2, Factory, Creator>::subscribe(f) &&
+        FactorySubscriber_2<C, typelist::tlist<P1_Ts...>, P2, Factory, Creator>::subscribe(f);
+    }
+};
+
+template<template<class, class> class C, typename P1, typename P2_H, typename... P2_Ts, typename Factory, typename Creator>
+struct FactorySubscriber_2<C, P1, typelist::tlist<P2_H, P2_Ts...>, Factory, Creator> {
+    static bool subscribe(Factory* f) {
+        return FactorySubscriber_2<C, P1, P2_H, Factory, Creator>::subscribe(f) &&
+        FactorySubscriber_2<C, P1, typelist::tlist<P2_Ts...>, Factory, Creator>::subscribe(f);
+    }
+};
+
+
 // Factory subscriber for templated classes with three template arguments
 template<std::size_t id,
         template<class, class, class> class S, typename TM, typename OM, typename Rng,
@@ -97,7 +149,7 @@ struct FactorySubscriber_3<id, S, TM, typelist::tlist<OM_H, OM_Ts...>, Rng, Fact
 };
 
 
-template <typename ObjectType, typename ObjectCreator=std::shared_ptr<ObjectType>(*)()>
+template <typename ObjectType, typename ObjectCreator=std::function<std::shared_ptr<ObjectType>()> >
 class ObjectFactory {
     typedef ObjectFactory<ObjectType, ObjectCreator> This_type;
     typedef std::map<std::size_t, ObjectCreator> Creator_map;
@@ -107,7 +159,7 @@ public:
     std::shared_ptr<ObjectType> create(std::size_t id, Args... args) {
         typename Creator_map::const_iterator i = this->creator_map.find(id);
         if (this->creator_map.end() != i) {
-            return (i->second)(&args...);
+            return (i->second)(args...);
         }
         return nullptr;
     }
@@ -119,6 +171,11 @@ public:
     template<template<class, class, class> class S, typename TM, typename OM, typename RNG, typename Creator>
     bool subscribe() {
         return FactorySubscriber_3<OM::size(), S, TM, OM, RNG, This_type, Creator>::subscribe(this);
+    }
+
+    template<template<class, class> class C, typename P1, typename P2, typename Creator>
+    bool subscribe() {
+        return FactorySubscriber_2<C, P1, P2, This_type, Creator>::subscribe(this);
     }
 
     template<template<class> class M, typename S, typename Creator>

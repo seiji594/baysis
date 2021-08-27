@@ -11,7 +11,9 @@
 
 #include "../extern/highfive/H5Group.hpp"
 #include "algorithms.hpp"
+#include "filterschemes.hpp"
 #include "samplingschemes.hpp"
+#include "dataprovider.hpp"
 #include "ifactories.hpp"
 
 using namespace algos;
@@ -35,8 +37,10 @@ enum class MeanFunction { bimodal=4 };
 // !! The order in the observation models typelist must be the same as the cases in the ModelType enum above
 using Obsm_tlist = typelist::tlist<LGObservationStationary, LPObservationStationary, GPObservationStationary>;
 using Sampler_tlist = typename zip<SingleStateScheme, EmbedHmmSchemeND>::with<LGTransitionStationary, Obsm_tlist, std::mt19937>::list;
+using Filter_tlist = typelist::tlist<schemes::CovarianceScheme, schemes::InformationScheme>;
+using Smoother_tlist = typelist::tlist<schemes::RtsScheme, schemes::TwoFilterScheme>;
 
-
+/*
 std::ostream& operator<<(std::ostream& os, ModelType mtype)
 {
     switch (mtype)
@@ -60,17 +64,31 @@ std::ostream& operator<<(std::ostream& os, SamplerType stype)
     }
     return os;
 }
-
+*/
 
 struct MCMCsession {
     explicit MCMCsession(const File& specs);
     std::shared_ptr<IMcmc> mcmc;
-    std::vector<int> seeds;
-    Vector xinit;
+    std::vector<u_long> seeds;
+    Matrix xinit;
     std::string id;
 
 private:
     void create_id(const std::string &fname);
+};
+
+struct DataInitialiser {
+    void initialise(const File& specs, const MCMCsession& session);
+    void provideto(const MCMCsession& session);
+
+    Matrix realdata;
+    Matrix_int intdata;
+};
+
+
+struct SmootherSession {
+    explicit SmootherSession(const File& specs);
+    std::shared_ptr<ISmoother> kalman;
 };
 
 
@@ -99,23 +117,59 @@ struct McmcMaker: CreatorWrapper<IMcmc, const Group&, const Group&, const Group&
                                          const Group& simspecs);
 };
 
+
+struct SmootherMaker: CreatorWrapper<ISmoother, const Group&> {
+    template<typename Derived>
+    static std::shared_ptr<ISmoother> create(const Group &modelspecs);
+};
+
+template<typename Derived>
+std::shared_ptr<ISampler> SamplerMaker::create(const Group &samplerspecs) {
+    int smplrid;
+    samplerspecs.getAttribute("stype").read(smplrid);
+
+    switch (SamplerType(smplrid)) {
+        case SamplerType::metropolis:
+            // No variables needed for initialisation
+            return std::make_shared<Derived>();
+        case SamplerType::ehmm:
+            if (samplerspecs.hasAttribute("pool_size")) {
+                std::size_t psize;
+                Attribute pszattr = samplerspecs.getAttribute("pool_size");
+                pszattr.read(psize);
+
+                if (samplerspecs.hasAttribute("flip")) {
+                    Attribute flipattr = samplerspecs.getAttribute("flip");
+                    bool flip;
+                    // We have both values for initialization
+                    flipattr.read(flip);
+                    return std::make_shared<Derived>(psize, flip);
+                }
+                // Flip variable missing, will use default
+                return std::make_shared<Derived>(psize);
+            }
+            // Not enough variables to initialise
+            throw LogicException("The specification for Embdedded HMM has to provideto at least pool_size variable.");
+    }
+}
+
 template<typename Derived>
 std::shared_ptr<IMcmc> McmcMaker::create(const Group& mspecs,
                                          const Group& smplrspecs,
                                          const Group& simspecs) {
     Group trmspec = mspecs.getGroup(TRANSITIONM_KEY);
     Group obsmspec = mspecs.getGroup(OBSERVATIONM_KEY);
-    int length, obsmid, smplrid, numiter, thin;
-    bool rev;
-    std::vector<double> scaling;
+    int length, obsmid, smplrid, numiter, thin=1;
+    bool rev=false;
+    std::vector<double> scaling(1, 1.);
 
     mspecs.getAttribute("length").read(length);
-    simspecs.getDataSet("scaling").read(scaling);
     obsmspec.getAttribute("mtype").read(obsmid);
     smplrspecs.getAttribute("stype").read(smplrid);
     simspecs.getAttribute("numiter").read(numiter);
-    simspecs.getAttribute("thin").read(thin);
-    simspecs.getAttribute("reverse").read(rev);
+    if (simspecs.exist("scaling")) simspecs.getDataSet("scaling").read(scaling);
+    if (simspecs.hasAttribute("thin")) simspecs.getAttribute("thin").read(thin);
+    if (simspecs.hasAttribute("reverse")) simspecs.getAttribute("reverse").read(rev);
 
     auto trm = LGTS::create(trmspec, length);
 
@@ -129,7 +183,8 @@ std::shared_ptr<IMcmc> McmcMaker::create(const Group& mspecs,
             sampler_factory.subscribe<EmbedHmmSchemeND, LGTransitionStationary,
                                       typelist::tlist_reverse<Obsm_tlist>::type, std::mt19937, SamplerMaker>();
     }
-    auto sampler = sampler_factory.create(smplrid, smplrspecs);
+
+    auto sampler = std::dynamic_pointer_cast<typename Derived::Scheme_type>(sampler_factory.create(obsmid, smplrspecs));
 
     switch (ModelType(obsmid)) {
         case ModelType::lingauss:
@@ -153,34 +208,12 @@ std::shared_ptr<IMcmc> McmcMaker::create(const Group& mspecs,
 
 
 template<typename Derived>
-std::shared_ptr<ISampler> SamplerMaker::create(const Group &samplerspecs) {
-    int smplrid;
-    samplerspecs.getAttribute("stype").read(smplrid);
-
-    switch (SamplerType(smplrid)) {
-        case SamplerType::metropolis:
-            // No variables needed for initialisation
-            return std::make_shared<Derived>();
-        case SamplerType::ehmm:
-            try {
-                Attribute pszattr = samplerspecs.getAttribute("pool_size");
-                std::size_t psize;
-                try {
-                    Attribute flipattr = samplerspecs.getAttribute("flip");
-                    bool flip;
-                    // We have both values for initialization
-                    pszattr.read(psize);
-                    flipattr.read(flip);
-                    return std::make_shared<Derived>(psize, flip);
-                } catch(AttributeException&) {
-                    // Flip variable missing, will use default
-                    return std::make_shared<Derived>(psize);
-                }
-            } catch(AttributeException&) {
-                // Not enough variables
-                throw LogicException("The specialisation for Embdedded HMM has to have at least pool_size variable.");
-            }
-    }
+std::shared_ptr<ISmoother> SmootherMaker::create(const Group &modelspecs) {
+    std::size_t length;
+    modelspecs.getAttribute("length").read(length);
+    auto trm = LGTS::create(modelspecs.getGroup("transition"), length);
+    auto obsm = LGOS::create(modelspecs.getGroup("observation"), length);
+    return std::make_shared<Derived>(trm, obsm);
 }
 
 

@@ -10,13 +10,14 @@
 #include <chrono>
 //#include <unordered_map>
 //#include "../baysis/probsupport.hpp"
-//#include "../baysis/filterschemes.cpp"
+#include "../baysis/filterschemes.cpp"
 //#include "../baysis/ifactories.hpp"
 //#include "../baysis/samplingschemes.hpp"
 //#include "../baysis/algorithms.hpp"
-#include "../baysis/h5bridge.hpp"
+#include "../baysis/models.cpp"
+#include "../baysis/h5bridge.cpp"
 //#include "../baysis/accumulator.hpp"
-//#include "../baysis/dataprovider.hpp"
+#include "../baysis/dataprovider.hpp"
 
 using namespace std;
 //using namespace schemes;
@@ -133,24 +134,31 @@ int main(int argc, const char * argv[]) {
 //    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
 //    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
 */
-
+/*
     //! Using HDF5 specs file to run MCMC
-    File file(std::string(PATH_TO_SPEC)+"spec.h5", File::ReadOnly);
-    MCMCsession session(file);
-    if (!session.mcmc) {
-        throw LogicException("MCMC session failed to initialize.");
-    }
-    std::cout << typeid(session.mcmc).name() << std::endl;
-//    const SampleAccumulator& accumulator = session.mcmc->getStatistics();
+    File file(std::string(PATH_TO_SPEC)+"specs.h5", File::ReadOnly);
+
+    std::regex suffix("specs?", std::regex_constants::icase);
+    std::regex prefix("(\\.+|~)/(\\w+)/");
+    std::regex ext("\\.h5", std::regex_constants::icase);
+    auto id = std::regex_replace(file.getName(), suffix, "results");
+    std::cout << id << std::endl;
+    id = std::regex_replace(id, prefix, "");
+    id = std::regex_replace(id, ext, "");
+    std::cout << id << std::endl;
+
+//    Matrix xinit;
+//    file.getDataSet(std::string(SIMULATION_SPEC_KEY)+"/"+std::string("_provideData")).read(xinit);
+//    std::cout << xinit << std::endl;
 //
-//    Group data = file.getGroup(DATA_KEY);
-//    // TODO: add helper to extract data or generate here
+//    std::vector<double> sc;
+//    file.getDataSet(std::string(SIMULATION_SPEC_KEY)+"/"+std::string("scaling")).read(sc);
+//    std::cout << sc.size() << std::endl;
 //
-//    for (int seed: session.seeds) {
-//        session.mcmc->reset(session.xinit, seed);
-//        session.mcmc->run();
-//        accumulator.save(std::string(PATH_TO_RESULTS) + session.id + ".h5");
-//    }
+//    Vector mu;
+//    file.getDataSet(std::string(MODEL_SPEC_KEY)+"/"+std::string(TRANSITIONM_KEY)+"/mu_prior").read(mu);
+//    std:cout << mu << std::endl;
+*/
 
 /*
     //! Some toy models for testing
@@ -176,7 +184,7 @@ int main(int argc, const char * argv[]) {
 
     std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
     std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
-    trm->init(A,Q);
+    trm->_provideData(A,Q);
     trm->setPrior(minit, Sinit);
     obsm->initialize(C, R);
 
@@ -243,7 +251,7 @@ int main(int argc, const char * argv[]) {
     // Generalised Poisson
     auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
     std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
-    gpoi->init(sigma.diagonal());
+    gpoi->_provideData(sigma.diagonal());
     // Linear Poisson
     std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
     lpoi->initialize(sigma, D, ctrls);
@@ -267,7 +275,7 @@ int main(int argc, const char * argv[]) {
     algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1000, {0.2, 0.8});
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
     ssmetropolis.initialize(simulator.getData());
-    ssmetropolis.reset(init_x, 1);
+    ssmetropolis.init(init_x, 1);
     ssmetropolis.run();
     const SampleAccumulator& accumulator = ssmetropolis.getStatistics();
 
@@ -294,7 +302,7 @@ int main(int argc, const char * argv[]) {
        algos::MCMC<Sampler_type> ehmm(trm, gpoi, sampler, 100, {0.1, 0.3}, 1, true);
        Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
        ehmm.initialize(simulator_poi.getData());
-       ehmm.reset(init_x, 1);
+       ehmm.init(init_x, 1);
        ehmm.run();
 
        for (const auto& s: ehmm.accumulator.samples) {

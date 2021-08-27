@@ -50,7 +50,8 @@ int main(int argc, const char * argv[]) {
     trm->setPrior(muinit, Sinit);
     obsm->init(C, R);
 
-    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
+    DataGenerator<LGTransitionStationary, LGObservationStationary> simulator;
+    simulator.generate(trm, obsm, 1);
     std::cout << "Observations:\n" << simulator.getData() << std::endl;
 /*
     //! Metropolis single state scheme
@@ -77,13 +78,14 @@ int main(int argc, const char * argv[]) {
     //! EHMM scheme
     int poolsz = 50;
     using Sampler_type = schemes::EmbedHmmSchemeND<LGTransitionStationary, LGObservationStationary, std::mt19937>;
-    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(poolsz));
-    algos::MCMC<Sampler_type> ehmm(trm, obsm, sampler, 90, {0.1, 0.4}, 1, true);
+    std::shared_ptr<schemes::ISampler> sampler = make_shared<Sampler_type>(poolsz);
+    algos::MCMC<Sampler_type> ehmm(trm, obsm, std::dynamic_pointer_cast<Sampler_type>(sampler), 90, {0.1, 0.4}, 1, true);
     Matrix init_x(Matrix::Constant(dim, T, 0.));  // Initial sample
-    ehmm.initialise(simulator.getData());
+    ehmm.provideData(simulator.getData(), double{});
+    ehmm.init(init_x, 1);
     ehmm.run();
-    SampleAccumulator& accumulator = ehmm.getStatistics();
-    accumulator.setBurnin(.1);
+    const SampleAccumulator& accumulator = ehmm.getStatistics();
+    const_cast<SampleAccumulator&>(accumulator).setBurnin(.1);
 
     std::cout << "Total samples:" << accumulator.getSamples().size() << std::endl;
     std::cout << "Acceptances:" << std::endl;
