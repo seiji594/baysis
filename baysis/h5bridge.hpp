@@ -34,7 +34,8 @@ enum class ModelType { lingauss=1, linpoiss, genpoiss, size=genpoiss };
 enum class SamplerType { metropolis=1, ehmm };
 enum class MeanFunction { bimodal=4 };
 
-// !! The order in the observation models typelist must be the same as the cases in the ModelType enum above
+
+// !! The order in the observation models typelist must be the same as the cases in the ModelType enum
 using Obsm_tlist = typelist::tlist<LGObservationStationary, LPObservationStationary, GPObservationStationary>;
 using Sampler_tlist = typename zip<SingleStateScheme, EmbedHmmSchemeND>::with<LGTransitionStationary, Obsm_tlist, std::mt19937>::list;
 using Filter_tlist = typelist::tlist<schemes::CovarianceScheme, schemes::InformationScheme>;
@@ -65,6 +66,23 @@ std::ostream& operator<<(std::ostream& os, SamplerType stype)
     return os;
 }
 */
+template<typename ValueType, typename DataType>
+bool saveResults(File& resfile, const std::string& path_to_ds,
+                 const DataType& ds, const std::unordered_map<std::string, int> &attrs={}) {
+    try {
+        DataSet data_set = resfile.createDataSet<ValueType>(path_to_ds, DataSpace::From(ds));
+        data_set.write(ds);
+
+        for (const auto& items: attrs) {
+            Attribute a = data_set.createAttribute<int>(items.first, DataSpace::From(items.second));
+            a.write(items.second);
+        }
+    } catch (DataSetException& e) {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }
+    return true;
+}
 
 struct MCMCsession {
     explicit MCMCsession(const File& specs);

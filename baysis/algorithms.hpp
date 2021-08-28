@@ -39,6 +39,8 @@ namespace algos {
     public:
         virtual void initialise(const Matrix &observations) = 0;
         virtual void run() = 0;
+        virtual const Matrix& getMeans() const = 0;
+        virtual const Matrix& getCovariances() const = 0;
     };
 
 
@@ -50,6 +52,8 @@ namespace algos {
 
         void initialise(const Matrix &observations) override;
         void run() override;
+        const Matrix& getMeans() const override { return smoothed_means; }
+        const Matrix& getCovariances() const override { return smoothed_covs; }
         static std::size_t Id() { return Filter::Id()*FILTER_ID_MULT + Smoother::Id(); }
 
         Matrix smoothed_means;

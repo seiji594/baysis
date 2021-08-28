@@ -28,10 +28,10 @@ MCMCsession::MCMCsession(const File &specs) {
 }
 
 void MCMCsession::create_id(const std::string &fname) {
-    std::regex suffix("specs?", std::regex_constants::icase);
+    std::regex suffix("_?specs?", std::regex_constants::icase);
     std::regex prefix("(\\.+|~)/(\\w+)/");
     std::regex ext("\\.h5", std::regex_constants::icase);
-    id = std::regex_replace(fname, suffix, "results");
+    id = std::regex_replace(fname, suffix, "");
     id = std::regex_replace(id, prefix, "");
     id = std::regex_replace(id, ext, "");
 }

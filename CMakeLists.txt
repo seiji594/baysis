@@ -24,7 +24,7 @@ endif ()
 INCLUDE_DIRECTORIES (${HDF5_INCLUDE_DIR})
 INCLUDE_DIRECTORIES(extern/)
 
-add_executable(Baysis baysis.cpp)
+add_executable(Baysis baysis.cpp baysis/filterschemes.cpp baysis/models.cpp)
 add_executable(Lingauss tests/lingauss.cpp)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(Baysis OpenMP::OpenMP_CXX)
