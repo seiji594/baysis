@@ -170,7 +170,7 @@ class MCMCsession:
 
     def run(self):
         rescode = None
-        with sp.Popen(["../cmake-build-release/Baysis", self._spec_file_],
+        with sp.Popen(["../build/Baysis", self._spec_file_],
                       stdout=sp.PIPE, stderr=sp.STDOUT, bufsize=1, universal_newlines=True) as p:
             while True:
                 line = p.stdout.readline()
