@@ -13,11 +13,7 @@
 #include <vector>
 #include <unordered_map>
 #include <Eigen/Dense>
-//#include "H5Cpp.h"
-#include "../extern/highfive/H5File.hpp"
 
-//using namespace H5;
-using namespace HighFive;
 
 class SampleAccumulator {
 public:
@@ -38,10 +34,8 @@ public:
     const std::vector<Sample_type>& getSamples() const;
     const std::vector<int>& getAcceptances() const;
     Timedelta totalDuration() const;
-    void save(const std::string& fname, const std::unordered_map<std::string, int>& attrs={}) const;
 
 private:
-//    herr_t write_matrix(const Matrix &mat, const H5::DataSpace &data_space, H5::DataSet &data_set, std::size_t pos) const;
     int offset{0};
     std::vector<Sample_type> samples;
     std::vector<int> accepts;
@@ -124,7 +118,7 @@ herr_t SampleAccumulator::write_matrix(const Matrix &mat, const H5::DataSpace &d
     data_set.write(mat.data(), H5::PredType::NATIVE_DOUBLE, mem_space, data_space);
     return 1;
 }
-*/
+
 void SampleAccumulator::save(const std::string &fname, const std::unordered_map<std::string, int> &attrs) const {
     File file(fname, File::ReadWrite | File::Create | File::Overwrite);
     DataSet data_set = file.createDataSet<int>("accepts", DataSpace::From(accepts));
@@ -136,7 +130,7 @@ void SampleAccumulator::save(const std::string &fname, const std::unordered_map<
         Attribute a = data_set2.createAttribute<int>(items.first, DataSpace::From(items.second));
         a.write(items.second);
     }
-/*
+
     const H5std_string file_name("../data/"+fname+".h5");
     const H5std_string dset_name("samples");
     std::size_t dim1 = samples.size();
@@ -167,8 +161,8 @@ void SampleAccumulator::save(const std::string &fname, const std::unordered_map<
         H5::DataSpaceIException::printErrorStack();
         return -1;
     }
-*/
-}
 
+}
+*/
 
 #endif //BAYSIS_ACCUMULATOR_HPP

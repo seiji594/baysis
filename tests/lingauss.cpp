@@ -30,8 +30,12 @@ int main(int argc, const char * argv[]) {
     Q = Q.setConstant(rho);
     Q += Matrix::Identity(dim, dim) * (1 - rho);
     R.setIdentity();
-    C = Matrix::Identity(dim, dim) * sgm;
+    C = Matrix::Identity(dim, dim) * c;
     Sinit = Q * (1/(1 - th*th));
+
+//    Check_Result(A, "See is matrix is printed out when compiled for release");
+//    std::cout << "Checking Eigen static asserts (out of bounds access):\n" << A.col(251) << std::endl;
+//    std::cout << "Checking Eigen static asserts (wrong dimension for matrix multiply):\n" << A * Matrix::Constant(11, 10, 5) << std::endl;
 /*
     std::cout << "================= Models ================" << std::endl;
     std::cout << "Transition model:" << std::endl;
@@ -51,30 +55,36 @@ int main(int argc, const char * argv[]) {
     obsm->init(C, R);
 
     DataGenerator<LGTransitionStationary, LGObservationStationary> simulator;
-    simulator.generate(trm, obsm, 1);
+    simulator.generate(trm, obsm, 1e6l);
     std::cout << "Observations:\n" << simulator.getData() << std::endl;
-/*
+
+
     //! Metropolis single state scheme
-    int thin = 10;
+    int thin = 1;
     using Sampler_type = schemes::SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
-    algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1e6, {0.2, 0.8}, thin);
+    algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 10000, {0.2, 0.8}, thin);
     Matrix init_x(Matrix::Constant(dim, T, 0.));  // Initial sample
-    ssmetropolis.initialize(simulator.getData(), init_x, 1);
+    ssmetropolis.provideData(simulator.getData(), double{});
+    ssmetropolis.init(init_x, 100);
     ssmetropolis.run();
-    SampleAccumulator& accumulator = ssmetropolis.getStatistics();
-    accumulator.setBurnin(.1);
+    const SampleAccumulator& accumulator = ssmetropolis.getStatistics();
+//    accumulator.setBurnin(.1);
 
+    std::cout << "\nDuration: " << accumulator.totalDuration() << "ms" << std::endl;
     std::cout << "Total samples:" << accumulator.getSamples().size() << std::endl;
     std::cout << "Acceptances:" << std::endl;
     for (auto& acc: accumulator.getAcceptances()) {
         std::cout << acc << "\t";
     }
-    std::cout << "\nDuration: " << accumulator.totalDuration() << "ms" << std::endl;
+//    for (auto& sample: accumulator.getSamples()) {
+//        std::cout << sample << std::endl;
+//    }
     Vector means = accumulator.getSmoothedMeans(T-1);
     std::cout << "Mean at T:\n" << means.transpose() << std::endl;
-    std::cout << "Cov at T:\n" << accumulator.getSmoothedCov(means, T-1) << std::endl;
-*/
+//    std::cout << "Cov at T:\n" << accumulator.getSmoothedCov(means, T-1) << std::endl;
+
+/*
     //! EHMM scheme
     int poolsz = 50;
     using Sampler_type = schemes::EmbedHmmSchemeND<LGTransitionStationary, LGObservationStationary, std::mt19937>;
@@ -102,9 +112,9 @@ int main(int argc, const char * argv[]) {
     kalmsm.initialise(simulator.getData());
     kalmsm.run();
 
-    std::cout << "Smoothed state mean at T:\n" << kalmsm.smoothed_means.col(T-1).transpose() << std::endl;
-    std::cout << "Smoothed state covs at T:\n" << kalmsm.smoothed_covs.block(0, T-dim, dim, dim) << std::endl;
-
+    std::cout << "Smoothed state means:\n" << kalmsm.smoothed_means << std::endl;
+    std::cout << "Smoothed state covs:\n" << kalmsm.smoothed_covs << std::endl;
+*/
     return 0;
 }
 

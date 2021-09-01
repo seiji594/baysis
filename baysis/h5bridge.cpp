@@ -118,12 +118,12 @@ template<> GPOS::Model_ptr GPOS::create(const Group& modelspecs, std::size_t len
 
 void DataInitialiser::initialise(const File &specs, const MCMCsession &session) {
     Group data = specs.getGroup(DATA_KEY);
-    std::string dtype;
     int mtype;
-    data.getAttribute("dtype").read(dtype);
     specs.getGroup(std::string(MODEL_SPEC_KEY)+"/"+std::string(OBSERVATIONM_KEY)).getAttribute("mtype").read(mtype);
 
     if (data.exist("observations")) {
+        std::string dtype;
+        data.getAttribute("dtype").read(dtype);
         if (dtype[0] == 'i') {
             specs.getDataSet(std::string(DATA_KEY)+"/observations").read(intdata);
         } else {
@@ -132,7 +132,7 @@ void DataInitialiser::initialise(const File &specs, const MCMCsession &session) 
     } else {
         // No data provided, need to generate
         u_long seed;
-        specs.getAttribute(std::string(DATA_KEY)+"/seed").read(seed);
+        data.getAttribute("seed").read(seed);
 
         switch (ModelType(mtype)) {
             case ModelType::lingauss:
@@ -168,5 +168,13 @@ void DataInitialiser::provideto(const MCMCsession& session) {
         session.mcmc->provideData(intdata, int{});
     } else {
         session.mcmc->provideData(realdata, double{});
+    }
+}
+
+bool DataInitialiser::saveto(File &file) {
+    if (intdata.size() != 0) {
+        return saveResults<int>(file, "observations", intdata);
+    } else {
+        return saveResults<double>(file, "observations", realdata);
     }
 }

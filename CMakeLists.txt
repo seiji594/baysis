@@ -3,7 +3,7 @@ project(Baysis)
 
 set(CMAKE_CXX_STANDARD 14)
 set (FIND_HDF_COMPONENTS C CXX shared)
-set(ENV{HDF5_DIR} /Users/HomeOffice/Downloads/CMake-hdf5-1.10.7/HDF5-1.10.7-Darwin/HDF_Group/HDF5/1.10.7/share/cmake/hdf5)
+set(ENV{HDF5_DIR} /Applications/HDF_Group/HDF5/1.10.7/share/cmake/hdf5)
 #set(CMAKE_IGNORE_PATH /Applications/anaconda3/lib)
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
@@ -25,7 +25,7 @@ INCLUDE_DIRECTORIES (${HDF5_INCLUDE_DIR})
 INCLUDE_DIRECTORIES(extern/)
 
 add_executable(Baysis baysis.cpp baysis/filterschemes.cpp baysis/models.cpp)
-add_executable(Lingauss tests/lingauss.cpp)
+add_executable(Lingauss tests/lingauss.cpp baysis/models.cpp)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(Baysis OpenMP::OpenMP_CXX)
     target_link_libraries (Lingauss OpenMP::OpenMP_CXX)

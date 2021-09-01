@@ -190,9 +190,9 @@ namespace schemes {
         scaled_mean_init.noalias() = post_cov_init * lg_transition.getPriorCovInv() * lg_transition.getPriorMean();
         post_L_init.compute(post_cov_init);
 
-        Matrix post_cov = (lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
+        Matrix post_cov = (lg_transition.getA().transpose() * lg_transition.getCovInv() * lg_transition.getA()
                            + lg_transition.getCovInv()).inverse();
-        scaled_prior_mean.noalias() = post_cov * lg_transition.getCovInv();
+        scaled_prior_mean.noalias() = post_cov * lg_transition.getCovInv() * lg_transition.getA();
         scaled_post_mean.noalias() = post_cov * lg_transition.getA().transpose() * lg_transition.getCovInv();
         post_L.compute(post_cov);
 

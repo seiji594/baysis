@@ -10,10 +10,27 @@
 #include "baysis/h5bridge.cpp"
 
 
-int main(int argc, const char * argv[]) {
-    File file(std::string(PATH_TO_SPEC)+"specs.h5", File::ReadOnly);
-    std::cout << "Loaded model specifications." << std::endl;
+void Launch(const File& file);
 
+int main(int argc, const char * argv[]) {
+    if (argc == 2) {
+        try {
+            File file(std::string(PATH_TO_SPEC)+argv[1], File::ReadOnly);
+            std::cout << "Loaded model specifications." << std::endl;
+            Launch(file);
+        } catch(FileException& e) {
+            std::cerr << e.what() << std::endl;
+            return -1;
+        }
+    } else {
+        std::cerr << "No specifications file supplied.\nUsage: Baysis <specs_file_name>" << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+
+void Launch(const File& file) {
     MCMCsession session(file);
     if (!session.mcmc) {
         throw LogicException("MCMC session failed to initialize.");
@@ -45,22 +62,24 @@ int main(int argc, const char * argv[]) {
 
     std:: cout << "\nRunning sampler for " << session.id << " with " << session.seeds.size() << " seeds:" << std::endl;
     for (u_long seed: session.seeds) {
-        std::cout << "\trunning for seed " << seed << "...\t";
+        std::cout << "\trunning with seed " << seed << " ..." << std::endl;
         session.mcmc->init(session.xinit, seed);
         session.mcmc->run();
-        std::cout << "Done in " << accumulator.totalDuration() << "ms" << std::endl;
+        std::cout << "\tDone in " << accumulator.totalDuration() << "ms" << std::endl;
         // Saving results
         std::stringstream ss;
         ss << PATH_TO_RESULTS << session.id << "_results_seed" << seed << ".h5";
         std::string resfname = ss.str();
         File rfile(resfname, File::ReadWrite | File::Create | File::Overwrite);
-        if (!saveResults<double>(rfile, "samples", accumulator.getSamples()) ||
+        if (!saveResults<double>(rfile, "samples", accumulator.getSamples(),
+                                 {{"duration", accumulator.totalDuration()}}) ||
                 !saveResults<int>(rfile, "accepts", accumulator.getAcceptances())) {
-            std::cout << "\tSkipping saving sampling results for seed " << seed << std::endl;
+            std::cout << "\tskipping saving sampling results for seed " << seed << std::endl;
         } else {
-            std::cout << "\tResults saved into " << resfname << std::endl;
+            std::string data_flag = data_initialiser.saveto(rfile) ? "(and data used)" : "(but not data)";
+            std::cout << "\tresults " << data_flag << " saved into " << resfname << std::endl;
         }
+        std::cout << std::endl;
     }
-
-    return 0;
+    std::cout << "######### All done #########" << std::endl;
 }

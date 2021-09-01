@@ -9,7 +9,9 @@
 #ifndef BAYSIS_H5BRIDGE_HPP
 #define BAYSIS_H5BRIDGE_HPP
 
-#include "../extern/highfive/H5Group.hpp"
+#include <highfive/H5File.hpp>
+#include <highfive/H5DataSet.hpp>
+#include <highfive/H5Group.hpp>
 #include "algorithms.hpp"
 #include "filterschemes.hpp"
 #include "samplingschemes.hpp"
@@ -98,6 +100,7 @@ private:
 struct DataInitialiser {
     void initialise(const File& specs, const MCMCsession& session);
     void provideto(const MCMCsession& session);
+    bool saveto(File &file);
 
     Matrix realdata;
     Matrix_int intdata;
