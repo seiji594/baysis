@@ -16,6 +16,20 @@ using namespace ssmodels;
 
 namespace schemes {
 
+    class ISampler {
+    public:
+        virtual ~ISampler() = default;
+        virtual void init(const Matrix_int& observations, const TransitionModel &tr_model) = 0;
+        virtual void init(const Matrix& observations, const TransitionModel &tr_model) = 0;
+        virtual void setScales(const std::vector<double>& scales) = 0;
+        virtual void reset(u_long seed) = 0;
+        virtual void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) = 0;
+        virtual void updateIter(int i) { }
+        virtual void reverseObservations() { }
+        virtual void setReversed() { }
+    };
+
+
     template<typename ObsM,typename RNG>
     struct AutoregressiveUpdate {
         template<typename DerivedA, typename DerivedB>
@@ -41,22 +55,28 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    class SingleStateScheme {
+    class SingleStateScheme: public ISampler {
     public:
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
 
-        void init(const Data_type &observations, const TransitionModel &tr_model);
-        void setScales(const std::vector<double>& scales) { scalings = scales; }
-        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
-        void updateIter(int i) { ar_update.eps = scalings[i % scalings.size()]; }
-        void reset(u_long seed);
-        void reverseObservations() { }
-        void setReversed() { }
+        SingleStateScheme() = default;
+        explicit SingleStateScheme(std::size_t) { }; // <-- for providing conformity with other scheme
+        SingleStateScheme(std::size_t, bool) { }; // <-- for providing conformity with other scheme
+        void init(const Matrix& observations, const TransitionModel &tr_model) override;
+        void init(const Matrix_int& observations, const TransitionModel &tr_model) override;
+        void setScales(const std::vector<double>& scales) override { scalings = scales; }
+        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
+        void updateIter(int i) override { ar_update.eps = scalings[i % scalings.size()]; }
+        void reset(u_long seed) override;
+//        void reverseObservations() { }
+//        void setReversed() { }
 
         Sample_type cur_sample;
         Vector_int acceptances;
     private:
+        void initialise(const Data_type &observations, const TransitionModel &tr_model);
+
         AutoregressiveUpdate<ObsM, RNG> ar_update;
         Data_type data;
         // Pre-computed values
@@ -71,7 +91,7 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    class EmbedHmmSchemeND {
+    class EmbedHmmSchemeND: public ISampler{
         enum {even, odd};
     public:
         typedef std::size_t Index;
@@ -79,19 +99,22 @@ namespace schemes {
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, 1> State_type;
 
+        EmbedHmmSchemeND() = default; // <-- for providing conformity with other schemes
         explicit EmbedHmmSchemeND(Index psize, bool flip=false) : pool_size(psize), noflip(!flip) { }
 
-        void init(const Data_type &observations, const TransitionModel &tr_model);
-        void setScales(const std::vector<double>& scales) { scalings = scales; }
-        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model);
-        void reset(u_long seed);
-        void updateIter(int i) {}
-        void reverseObservations() { data_rev = data.rowwise().reverse(); }
-        void setReversed() { reversed = !reversed; }
+        void init(const Matrix &observations, const TransitionModel &tr_model) override;
+        void init(const Matrix_int &observations, const TransitionModel &tr_model) override;
+        void setScales(const std::vector<double>& scales) override { scalings = scales; }
+        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
+        void reset(u_long seed) override;
+//        void updateIter(int i) {}
+        void reverseObservations() override { data_rev = data.rowwise().reverse(); }
+        void setReversed() override { reversed = !reversed; }
 
         Sample_type cur_sample;
         Vector_int acceptances;
     private:
+        void initialise(const Data_type &observations, const TransitionModel &tr_model);
         void make_pool(const TrM &trm, const ObsM &obsm, Index t, Index a_cached=0);
         void met_update(const TrM &trm, const ObsM &obsm, Index t);
         void shift_update(const TrM &trm, const ObsM &obsm, Index t);
@@ -112,6 +135,7 @@ namespace schemes {
         AutoregressiveUpdate<ObsM, RNG> ar_update;
         RandomSample<RNG, std::uniform_int_distribution<Index> > randint;
     };
+
 
     template<typename ObsM, typename RNG>
     template<typename DerivedA, typename DerivedB>
@@ -146,7 +170,17 @@ namespace schemes {
     }
 
     template<typename TrM, typename ObsM, typename RNG>
-    void SingleStateScheme<TrM, ObsM, RNG>::init(const Data_type &observations, const TransitionModel &tr_model) {
+    void SingleStateScheme<TrM, ObsM, RNG>::init(const Matrix &observations, const TransitionModel &tr_model) {
+        this->initialise(observations.cast<typename Data_type::Scalar>(), tr_model);
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void SingleStateScheme<TrM, ObsM, RNG>::init(const Matrix_int &observations, const TransitionModel &tr_model) {
+        this->initialise(observations.cast<typename Data_type::Scalar>(), tr_model);
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void SingleStateScheme<TrM, ObsM, RNG>::initialise(const Data_type &observations, const TransitionModel &tr_model) {
         // Initialise
         const TrM& lg_transition = static_cast<const TrM&>(tr_model);
         data = observations;
@@ -156,9 +190,9 @@ namespace schemes {
         scaled_mean_init.noalias() = post_cov_init * lg_transition.getPriorCovInv() * lg_transition.getPriorMean();
         post_L_init.compute(post_cov_init);
 
-        Matrix post_cov = (lg_transition.getA() * lg_transition.getCovInv() * lg_transition.getA()
+        Matrix post_cov = (lg_transition.getA().transpose() * lg_transition.getCovInv() * lg_transition.getA()
                            + lg_transition.getCovInv()).inverse();
-        scaled_prior_mean.noalias() = post_cov * lg_transition.getCovInv();
+        scaled_prior_mean.noalias() = post_cov * lg_transition.getCovInv() * lg_transition.getA();
         scaled_post_mean.noalias() = post_cov * lg_transition.getA().transpose() * lg_transition.getCovInv();
         post_L.compute(post_cov);
 
@@ -178,7 +212,6 @@ namespace schemes {
         ar_update.norm = RandomSample<RNG, std::normal_distribution<> >(rng);
         acceptances.setZero();
     }
-
 
     template<typename TrM, typename ObsM, typename RNG>
     void SingleStateScheme<TrM, ObsM, RNG>::sample(const TransitionModel &tr_model,
@@ -219,7 +252,17 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
-    void EmbedHmmSchemeND<TrM, ObsM, RNG>::init(const Data_type &observations, const TransitionModel &tr_model) {
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::init(const Matrix& observations, const TransitionModel &tr_model) {
+        this->initialise(observations.template cast<typename Data_type::Scalar>(), tr_model);
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::init(const Matrix_int& observations, const TransitionModel &tr_model) {
+        this->initialise(observations.template cast<typename Data_type::Scalar>(), tr_model);
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::initialise(const Data_type &observations, const TransitionModel &tr_model) {
         // Initialise
         data = observations;
         cur_state.resize(tr_model.stateDim());

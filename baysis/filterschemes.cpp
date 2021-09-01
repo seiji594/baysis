@@ -7,7 +7,7 @@
 //
 
 #include "filterschemes.hpp"
-#include "baysisexception.hpp"
+//#include "baysisexception.hpp"
 
 
 namespace schemes {
@@ -28,7 +28,7 @@ namespace schemes {
     FilterBase::FilterBase(std::size_t x_size) :
             LinearStateBase(x_size), temp_X(x_size, x_size) { }
 
-    void FilterBase::predict(LGTransitionStationary &lgsm) {
+    void FilterBase::predict(ssmodels::LGTransitionStationary &lgsm) {
         x = lgsm.getMean(x);
 
         temp_X.noalias() = (lgsm.getA() * X).transpose();
@@ -41,12 +41,12 @@ namespace schemes {
             LinearStateBase(x_size), FilterBase(x_size),
             S(y_size, y_size), K(x.size(), y_size), tempXY(x_size, y_size) { }
 
-    void CovarianceScheme::observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) {
+    void CovarianceScheme::observe(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y) {
         Vector r = y - lgobsm.getMean(x);        // Observation model, innovation;
         return update(lgobsm, r);
     }
 
-    void CovarianceScheme::update(LGObservationStationary &lgobsm, const Ref<Vector> &r) {
+    void CovarianceScheme::update(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &r) {
         // Innovation covariance
         tempXY.noalias() = X * lgobsm.getC().transpose();
         S = lgobsm.getC() * tempXY + lgobsm.getCov();
@@ -83,7 +83,7 @@ namespace schemes {
         transform();
     }
 
-    void InformationScheme::predict(LGTransitionStationary &lgsm) {
+    void InformationScheme::predict(ssmodels::LGTransitionStationary &lgsm) {
         FilterBase::predict(lgsm);
         // Information
         rclimit.checkPD(X.llt().rcond(), "In filter predict step. Covariance matrix is not PD");
@@ -91,11 +91,11 @@ namespace schemes {
         e.noalias() = La * x;
     }
 
-    void InformationScheme::observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) {
+    void InformationScheme::observe(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y) {
         update(lgobsm, y);
     }
 
-    void InformationScheme::update(LGObservationStationary &lgobsm, const Ref<Vector> &r) {
+    void InformationScheme::update(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &r) {
         // Observation information
         tempCR.noalias() = lgobsm.getC().transpose() * lgobsm.getCovInv();
         e.noalias() += tempCR * r;
@@ -118,13 +118,13 @@ namespace schemes {
     RtsScheme::RtsScheme(size_t x_size) :
             LinearStateBase(x_size), SmootherBase(x_size), J(x_size, x_size) {}
 
-    void RtsScheme::predictBack(const LGTransitionStationary &lgsm,
+    void RtsScheme::predictBack(const ssmodels::LGTransitionStationary &lgsm,
                                 const Ref<Matrix> &filtered_Xprior,
                                 const Ref<Matrix> &filtered_Xpost) {
         J.noalias() = filtered_Xpost * lgsm.getA().transpose() * filtered_Xprior.inverse();
     }
 
-    void RtsScheme::updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+    void RtsScheme::updateBack(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y,
                                const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                                const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost) {
         // Assume the filtered covariances already checked for PD in the filter
@@ -138,7 +138,7 @@ namespace schemes {
             Tau(x_size, x_size), theta(x_size),
             temp_D(x_size, x_size), I(Matrix::Identity(x_size, x_size)) {}
 
-    void TwoFilterScheme::initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+    void TwoFilterScheme::initSmoother(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
                                        const Ref<Vector> &x_final, const Ref<Matrix> &X_final) {
         temp_Y.noalias() = lgobsm.getC().transpose() * lgobsm.getCovInv();
         Tau.noalias() = temp_Y * lgobsm.getC();
@@ -147,7 +147,7 @@ namespace schemes {
         X = X_final;
     }
 
-    void TwoFilterScheme::predictBack(const LGTransitionStationary &lgsm, const Ref<Matrix> &filtered_Xprior,
+    void TwoFilterScheme::predictBack(const ssmodels::LGTransitionStationary &lgsm, const Ref<Matrix> &filtered_Xprior,
                                       const Ref<Matrix> &filtered_Xpost) {
         Matrix Theta(lgsm.getL().matrixL());
         temp_D = Theta * (I + Theta.transpose() * Tau * Theta).inverse() * Theta.transpose();
@@ -155,7 +155,7 @@ namespace schemes {
         Tau = lgsm.getA().transpose() * Tau * (I - temp_D * Tau) * lgsm.getA();
     }
 
-    void TwoFilterScheme::updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+    void TwoFilterScheme::updateBack(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y,
                                      const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                                      const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost) {
         Tau.noalias() += temp_Y * lgobsm.getC();

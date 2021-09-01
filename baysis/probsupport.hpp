@@ -12,8 +12,8 @@
 #include <random>
 #include <cmath>
 #include <unsupported/Eigen/SpecialFunctions>
-#include "baysisexception.hpp"
-#include "matsupport.hpp"
+//#include "baysisexception.hpp"
+//#include "matsupport.hpp"
 
 const double PI = std::acos(-1);
 

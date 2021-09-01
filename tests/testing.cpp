@@ -8,22 +8,55 @@
 
 #include <iostream>
 #include <chrono>
-#include <unordered_map>
-#include "../baysis/probsupport.hpp"
+//#include <unordered_map>
+//#include "../baysis/probsupport.hpp"
 #include "../baysis/filterschemes.cpp"
-#include "../baysis/samplingschemes.hpp"
-#include "../baysis/algorithms.hpp"
-#include "../baysis/accumulator.hpp"
+//#include "../baysis/ifactories.hpp"
+//#include "../baysis/samplingschemes.hpp"
+//#include "../baysis/algorithms.hpp"
+#include "../baysis/models.cpp"
+#include "../baysis/h5bridge.cpp"
+//#include "../baysis/accumulator.hpp"
 #include "../baysis/dataprovider.hpp"
 
 using namespace std;
-using namespace schemes;
+//using namespace schemes;
+/*
+template<typename TList, std::size_t... I>
+auto a2t_impl(std::index_sequence<I...>)
+{
+    return std::make_tuple(typeid(typename typelist::tlist_type_at<I, TList>::type).name()...);
+}
 
+
+template<class Ch, class Tr, class Tuple, std::size_t... Is>
+void print_tuple_impl(std::basic_ostream<Ch,Tr>& os,
+                      const Tuple& t,
+                      std::index_sequence<Is...>) {
+    using swallow = int[];
+    (void)swallow{0, (void(os << (Is == 0? "" : "\n") << std::get<Is>(t)), 0)...};
+}
+
+template<class Ch, class Tr, class... Args>
+auto& operator<<(std::basic_ostream<Ch, Tr>& os,
+                const std::tuple<Args...>& t) {
+    os << "(";
+    print_tuple_impl(os, t, std::index_sequence_for<Args...>{});
+    return os << ")";
+}
+*/
 
 int main(int argc, const char * argv[]) {
-
+/*
+    // Check if pointer to Rng ensures each Rsg object continues the random number sequence
     std::shared_ptr<std::mt19937> rng = std::make_shared<std::mt19937>(GenericPseudoRandom<std::mt19937>::makeRnGenerator(1));
-    RandomSample<std::mt19937, std::normal_distribution<> > rsg{rng};
+    for (int i = 0; i < 3; ++i) {
+        RandomSample<std::mt19937, std::normal_distribution<> > rsg1{rng};
+        std::cout << rsg1.draw(5).transpose() << std::endl;
+        RandomSample<std::mt19937, std::normal_distribution<> > rsg2{rng};
+        std::cout << rsg2.draw(5).transpose() << std::endl;
+    }
+*/
 /*
     RandomSample<std::mt19937, std::poisson_distribution<> > rsg2{rng};
     std::uniform_int_distribution<> randint(1,10);
@@ -101,7 +134,33 @@ int main(int argc, const char * argv[]) {
 //    std::cout << "A.inverse() vs Ainv1 \n" << Ainv1 - A.inverse() << std::endl;
 //    std::cout << "A.inverse() vs Ainv2 \n" << Ainv2 - A.inverse() << std::endl;
 */
+/*
+    //! Using HDF5 specs file to run MCMC
+    File file(std::string(PATH_TO_SPEC)+"specs.h5", File::ReadOnly);
 
+    std::regex suffix("specs?", std::regex_constants::icase);
+    std::regex prefix("(\\.+|~)/(\\w+)/");
+    std::regex ext("\\.h5", std::regex_constants::icase);
+    auto id = std::regex_replace(file.getName(), suffix, "results");
+    std::cout << id << std::endl;
+    id = std::regex_replace(id, prefix, "");
+    id = std::regex_replace(id, ext, "");
+    std::cout << id << std::endl;
+
+//    Matrix xinit;
+//    file.getDataSet(std::string(SIMULATION_SPEC_KEY)+"/"+std::string("_provideData")).read(xinit);
+//    std::cout << xinit << std::endl;
+//
+//    std::vector<double> sc;
+//    file.getDataSet(std::string(SIMULATION_SPEC_KEY)+"/"+std::string("scaling")).read(sc);
+//    std::cout << sc.size() << std::endl;
+//
+//    Vector mu;
+//    file.getDataSet(std::string(MODEL_SPEC_KEY)+"/"+std::string(TRANSITIONM_KEY)+"/mu_prior").read(mu);
+//    std:cout << mu << std::endl;
+*/
+
+/*
     //! Some toy models for testing
    // Set up the model
     Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
@@ -125,18 +184,31 @@ int main(int argc, const char * argv[]) {
 
     std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
     std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
-    trm->init(A,Q);
+    trm->_provideData(A,Q);
     trm->setPrior(minit, Sinit);
-    obsm->init(C, R);
+    obsm->initialize(C, R);
 
     DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
     std::cout << "Observations:\n" << simulator.getData() << std::endl;
+*/
+/*
+    // Runtime Type checking
+//    std::cout << "trm is LGTransitionStationary " << (typeid(*trm) == typeid(LGTransitionStationary)) << std::endl;
+//    std::cout << "trm id is " << typeid(*trm).name() << std::endl;
+//    std::cout << "LGtransitionStationary id is " << typeid(LGTransitionStationary).name() << std::endl;
+    using Obsm = typelist::tlist<LGObservationStationary, LPObservationStationary, GPObservationStationary>;
+    using Test_type = typename zip<SingleStateScheme, EmbedHmmSchemeND>::with<LGTransitionStationary, Obsm, std::mt19937>::list;
+    auto sz = Test_type::size();
+    typedef std::make_index_sequence<Test_type::size()> Idx;
+    auto tpl = a2t_impl<Test_type>(Idx{});
+    std::cout << tpl << std::endl;
+*/
 /*
     //! Kalman filter tests
     // Initialize Kalman filter with covariance scheme
     CovarianceScheme kf(4, 2);
 
-    kf.init((*trm).getPriorMean(), (*trm).getPriorCov());
+    kf.initialize((*trm).getPriorMean(), (*trm).getPriorCov());
 
     Matrix state_means(4, 10);
     Matrix state_mean_priors(4, 10);
@@ -161,7 +233,7 @@ int main(int argc, const char * argv[]) {
 /*
     //! Kalman smoother test
     algos::KalmanSmoother<InformationScheme, TwoFilterScheme> kalmsm(trm, obsm);
-    kalmsm.initialise(simulator.getData());
+    kalmsm.initialize(simulator.getData());
     kalmsm.run();
 
     std::cout << "State means:\n" << kalmsm.post_means << std::endl;
@@ -179,10 +251,10 @@ int main(int argc, const char * argv[]) {
     // Generalised Poisson
     auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
     std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
-    gpoi->init(sigma.diagonal());
+    gpoi->_provideData(sigma.diagonal());
     // Linear Poisson
     std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
-    lpoi->init(sigma, D, ctrls);
+    lpoi->initialize(sigma, D, ctrls);
 
 //    std::cout << "State:\t" << x.transpose() << std::endl;
 //    std::cout << "Mean:\t" << gpoi.getMean(x).transpose() << std::endl;
@@ -195,54 +267,58 @@ int main(int argc, const char * argv[]) {
     DataGenerator<LGTransitionStationary, GPObservationStationary> simulator_poi(trm, gpoi, 1);
     std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
 */
-
+/*
     //! Single state Metropolis sampler
     using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
     std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>());
 
     algos::MCMC<Sampler_type> ssmetropolis(trm, obsm, sampler, 1000, {0.2, 0.8});
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ssmetropolis.initialise(simulator.getData(), init_x, 1);
+    ssmetropolis.initialize(simulator.getData());
+    ssmetropolis.init(init_x, 1);
     ssmetropolis.run();
     const SampleAccumulator& accumulator = ssmetropolis.getStatistics();
 
-    for (const auto& s: accumulator.getSamples()) {
-        std::cout << s << std::endl;
-    }
+//    for (const auto& s: accumulator.getSamples()) {
+//        std::cout << s << std::endl;
+//    }
 
+    std::cout << "number of samples:" << accumulator.getSamples().size() << std::endl;
     std::cout << "Acceptances:" << std::endl;
     for (auto& acc: accumulator.getAcceptances()) {
         std::cout << acc << "\t";
     }
     std::cout << "\nDuration: " << accumulator.totalDuration() << "ms" << std::endl;
-
-    std::cout << "Mean at T" << accumulator.getSmoothedMeans(9) << std::endl;
-    std::cout << "Cov at T" << accumulator.getSmoothedCov(9) << std::endl;
-
-/*
-    //! Embedded HMM sampler
-    using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
-    std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5, true));  // <-- 5 pool states
-
-    algos::MCMC<Sampler_type> ehmm(trm, gpoi, sampler, 100, {0.1, 0.3}, 1, true);
-    Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-    ehmm.initialise(simulator_poi.getData(), init_x, 1);
-    ehmm.run();
-
-    for (const auto& s: ehmm.accumulator.samples) {
-        std::cout << s << std::endl;
-    }
-
-    std::cout << "Acceptances:" << std::endl;
-    int i = 0;
-    for (auto& acc: ehmm.accumulator.accepts) {
-        if (i == 10)
-            std::cout << std::endl;
-        std::cout << acc << "\t";
-        ++i;
-    }
-    std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
+    Vector means = accumulator.getSmoothedMeans(9);
+    std::cout << "Mean at T\n" << means << std::endl;
+    std::cout << "Cov at T\n" << accumulator.getSmoothedCov(means, 9) << std::endl;
+    accumulator.save("test2", std::unordered_map<std::string, int>());
 */
+    /*
+       //! Embedded HMM sampler
+       using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
+       std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5, true));  // <-- 5 pool states
+
+       algos::MCMC<Sampler_type> ehmm(trm, gpoi, sampler, 100, {0.1, 0.3}, 1, true);
+       Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
+       ehmm.initialize(simulator_poi.getData());
+       ehmm.init(init_x, 1);
+       ehmm.run();
+
+       for (const auto& s: ehmm.accumulator.samples) {
+           std::cout << s << std::endl;
+       }
+
+       std::cout << "Acceptances:" << std::endl;
+       int i = 0;
+       for (auto& acc: ehmm.accumulator.accepts) {
+           if (i == 10)
+               std::cout << std::endl;
+           std::cout << acc << "\t";
+           ++i;
+       }
+       std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
+   */
 
     return 0;
 }

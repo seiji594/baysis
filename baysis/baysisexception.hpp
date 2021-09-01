@@ -17,6 +17,7 @@
 #ifndef BAYSIS_BAYSISEXCEPTION_HPP
 #define BAYSIS_BAYSISEXCEPTION_HPP
 
+#include <iostream>
 #include <exception>
 #include <Eigen/Dense>
 

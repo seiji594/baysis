@@ -10,11 +10,12 @@
 #define BAYSIS_FILTERSCHEMES_HPP
 
 #include "matsupport.hpp"
-#include "models.cpp"
+#include "models.hpp"
 
 using Eigen::Ref;
-using ssmodels::LGTransitionStationary;
-using ssmodels::LGObservationStationary;
+
+enum class FilterScheme: std::size_t { cov=1, info };
+enum class SmootherScheme: std::size_t { rts=1, twofilter };
 
 
 namespace schemes {
@@ -40,13 +41,13 @@ namespace schemes {
         explicit FilterBase(std::size_t x_size);
 
         // Make a predict step
-        virtual void predict(LGTransitionStationary& lgsm);
+        virtual void predict(ssmodels::LGTransitionStationary& lgsm);
         // Compute innovation based on observation of the data
-        virtual void observe(LGObservationStationary& lgobsm, const Ref<Vector> &y) = 0;
+        virtual void observe(ssmodels::LGObservationStationary& lgobsm, const Ref<Vector> &y) = 0;
 
     protected:
         // Update the expected state and covariance
-        virtual void update(LGObservationStationary& lgobsm, const Ref<Vector> &r) = 0;
+        virtual void update(ssmodels::LGObservationStationary& lgobsm, const Ref<Vector> &r) = 0;
         // Transform the internal state into standard representation, if needed
         virtual void transform() = 0;
 
@@ -63,14 +64,15 @@ namespace schemes {
     public:
         CovarianceScheme(std::size_t x_size, std::size_t y_size);
 
-        void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        void observe(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        static std::size_t Id() { return static_cast<size_t>(FilterScheme::cov); }
 
         Matrix S;		// Innovation Covariance
         Matrix K;		// Kalman Gain
 
     protected:
         void transform() override { /*No transformation needed*/ }
-        void update(LGObservationStationary& lgobsm, const Ref<Vector> &r) override;
+        void update(ssmodels::LGObservationStationary& lgobsm, const Ref<Vector> &r) override;
 
         // Permanently allocated temp
         Matrix tempXY;
@@ -87,15 +89,16 @@ namespace schemes {
 
         void init(const Vector &x_init, const Matrix &X_init) override;
         void initInformation (const Ref<Vector> &eta, const Ref<Matrix> &Lambda);  // Initialize with information directly
-        void predict(LGTransitionStationary &lgsm) override;
-        void observe(LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        void predict(ssmodels::LGTransitionStationary &lgsm) override;
+        void observe(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y) override;
+        static std::size_t Id() { return static_cast<size_t>(FilterScheme::info); }
 
         Vector e;				// Information state
         Matrix La;       		// Information
 
     protected:
         void transform() override;
-        void update(LGObservationStationary &lgobsm, const Ref<Vector> &r) override;
+        void update(ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &r) override;
 
         // Permanently allocated temp
         Matrix tempCR;
@@ -116,12 +119,12 @@ namespace schemes {
     public:
         explicit RtsScheme(size_t x_size);
 
-        void initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+        void initSmoother(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
                           const Ref<Vector> &x_final, const Ref<Matrix> &X_final) {
             init(x_final, X_final);
         }
 
-        void predictBack(const LGTransitionStationary &lgsm,
+        void predictBack(const ssmodels::LGTransitionStationary &lgsm,
                          const Ref<Matrix> &filtered_Xprior,
                          const Ref<Matrix> &filtered_Xpost);
 
@@ -134,9 +137,11 @@ namespace schemes {
           * @param filtered_Xprior - predicted filtered state covariance saved during filter run
           * @param filtered_Xpost - posterior filtered state covariance saved during filter run
           */
-         void updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+         void updateBack(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y,
                          const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                          const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
+
+         static std::size_t Id() { return static_cast<size_t>(SmootherScheme::rts); }
 
         Matrix J;       // Backward Kalman gain
     };
@@ -149,17 +154,19 @@ namespace schemes {
      public:
          explicit TwoFilterScheme(size_t x_size);
 
-         void initSmoother(const LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
+         void initSmoother(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y_final,
                            const Ref<Vector> &x_final, const Ref<Matrix> &X_final);
 
-         void predictBack(const LGTransitionStationary &lgsm,
+         void predictBack(const ssmodels::LGTransitionStationary &lgsm,
                           const Ref<Matrix> &filtered_Xprior,
                           const Ref<Matrix> &filtered_Xpost);
 
          int updateIndex(int idx) { return idx; }
-         void updateBack(const LGObservationStationary &lgobsm, const Ref<Vector> &y,
+         void updateBack(const ssmodels::LGObservationStationary &lgobsm, const Ref<Vector> &y,
                          const Ref<Vector> &filtered_xprior, const Ref<Vector> &filtered_xpost,
                          const Ref<Matrix> &filtered_Xprior, const Ref<Matrix> &filtered_Xpost);
+
+         static std::size_t Id() { return static_cast<size_t>(SmootherScheme::twofilter); }
 
          Matrix Tau;            // Information matrix
          Vector theta;          // Information vector

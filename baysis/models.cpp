@@ -43,7 +43,7 @@ namespace ssmodels {
             throw LogicException("Transition model. Covariance matrix not symmetric");
         }
         LQ.compute(Q);
-        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix no PD");
+        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix not PD");
         Q_inv = Q.inverse();
     }
 
@@ -53,7 +53,7 @@ namespace ssmodels {
             throw LogicException("Transition model. Initial covariance matrix not symmetric");
         }
         LQprior.compute(Q_prior);
-        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix no PD");
+        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix not PD");
         Q_prior_inv = Q_prior.inverse();
         mu_prior = mu;
     }

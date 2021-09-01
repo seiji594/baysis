@@ -13,6 +13,8 @@
 #include "models.hpp"
 #include "accumulator.hpp"
 
+constexpr std::size_t FILTER_ID_MULT = 10;
+
 using ssmodels::TransitionModel;
 using ssmodels::ObservationModel;
 using ssmodels::LGTransitionStationary;
@@ -21,14 +23,38 @@ using ssmodels::LGObservationStationary;
 
 namespace algos {
 
+    class IMcmc {
+    public:
+        virtual ~IMcmc() = default;
+        virtual void provideData(const Matrix &observations, double) = 0;
+        virtual void provideData(const Matrix_int &observations, int) = 0;
+        virtual void init(const Matrix &x_init, u_long seed) = 0;
+        virtual void run() = 0;
+        virtual std::shared_ptr<TransitionModel> getTransitionModel() const = 0;
+        virtual std::shared_ptr<ObservationModel> getObservationModel() const = 0;
+        virtual const SampleAccumulator& getStatistics() const = 0;
+    };
+
+    class ISmoother {
+    public:
+        virtual void initialise(const Matrix &observations) = 0;
+        virtual void run() = 0;
+        virtual const Matrix& getMeans() const = 0;
+        virtual const Matrix& getCovariances() const = 0;
+    };
+
+
     template<typename Filter, typename Smoother>
-    class KalmanSmoother {
+    class KalmanSmoother: public ISmoother {
     public:
         KalmanSmoother(const std::shared_ptr<LGTransitionStationary> &tr_model,
                        const std::shared_ptr<LGObservationStationary> &obs_model);
 
-        void initialise(const Matrix &observations);
-        void run();
+        void initialise(const Matrix &observations) override;
+        void run() override;
+        const Matrix& getMeans() const override { return smoothed_means; }
+        const Matrix& getCovariances() const override { return smoothed_covs; }
+        static std::size_t Id() { return Filter::Id()*FILTER_ID_MULT + Smoother::Id(); }
 
         Matrix smoothed_means;
         Matrix post_means;
@@ -47,22 +73,27 @@ namespace algos {
 
 
     template<typename Scheme>
-    class MCMC {
+    class MCMC: public IMcmc {
     public:
+        typedef Scheme Scheme_type;
         typedef typename Scheme::Data_type Data_type;
-        typedef typename Scheme::Sample_type Sample_type;
 
         MCMC(const std::shared_ptr<TransitionModel> &tr_model, const std::shared_ptr<ObservationModel> &obs_model,
              const std::shared_ptr<Scheme> &sampling_scheme, int N,
              const std::vector<double> &scalings = std::vector<double>(1, 1.), int thinning_factor = 1,
              bool reverse = false);
 
-        void initialise(const Data_type &observations, const Sample_type &x_init, u_long seed=0);
-        void reset(const Sample_type &x_init, u_long seed=0);
-        void run();
-        const SampleAccumulator& getStatistics() const { return accumulator; }
+        void provideData(const Matrix &observations, double) override;
+        void provideData(const Matrix_int &observations, int) override;
+        void init(const Matrix& x_init, u_long seed) override;
+        void run() override;
+        std::shared_ptr<TransitionModel> getTransitionModel() const override { return transitionM; }
+        std::shared_ptr<ObservationModel> getObservationModel() const override { return observationM; }
+        const SampleAccumulator& getStatistics() const override { return accumulator; }
 
     private:
+        void _provideData(const Data_type &observations);
+
         SampleAccumulator accumulator;
         const std::shared_ptr<TransitionModel> transitionM;
         const std::shared_ptr<ObservationModel> observationM;
@@ -148,22 +179,30 @@ namespace algos {
                        numiter(N), thin(thinning_factor), run_reversed(reverse), scaling(scalings) {
         sampler->setScales(scaling);
         if (run_reversed) {
-            std::size_t acc_size = 1 + numiter / thin;
+            std::size_t acc_size = 2 * (1 + numiter / thin);
             accumulator.resize(acc_size);
         }
     }
 
-
     template<typename Scheme>
-    void MCMC<Scheme>::initialise(const Data_type &observations, const Sample_type &x_init, u_long seed) {
-        sampler->init(observations, *transitionM);
-        if (run_reversed)
-            sampler->reverseObservations();
-        reset(x_init, seed);
+    void MCMC<Scheme>::provideData(const Matrix &observations, double) {
+        this->_provideData(observations.cast<typename Data_type::Scalar>());
     }
 
     template<typename Scheme>
-    void MCMC<Scheme>::reset(const Sample_type &x_init, u_long seed) {
+    void MCMC<Scheme>::provideData(const Matrix_int &observations, int) {
+        this->_provideData(observations.cast<typename Data_type::Scalar>());
+    }
+
+    template<typename Scheme>
+    void MCMC<Scheme>::_provideData(const Data_type &observations) {
+        sampler->init(observations, *transitionM);
+        if (run_reversed)
+            sampler->reverseObservations();
+    }
+
+    template<typename Scheme>
+    void MCMC<Scheme>::init(const Matrix& x_init, u_long seed) {
         sampler->cur_sample = x_init;
         sampler->reset(seed);
         accumulator.reset();
