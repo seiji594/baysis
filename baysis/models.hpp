@@ -10,9 +10,11 @@
 #ifndef BAYSIS_MODELS_HPP
 #define BAYSIS_MODELS_HPP
 
+#include <utility>
 #include "baysisexception.hpp"
 #include "matsupport.hpp"
 #include "probsupport.hpp"
+#include "paramgenerators.hpp"
 
 using Eigen::Ref;
 
@@ -204,7 +206,7 @@ namespace ssmodels
         Sample_type simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
     };
     /**
-     * Generalised Poisson stationary observation model. he parameters not changing with time.
+     * Generalised Poisson stationary observation model. The parameters not changing with time.
      */
     class GPObservationStationary: public ObservationModel {
     public:
@@ -235,6 +237,27 @@ namespace ssmodels
     };
 
 
+    /**
+     * Generic class to allow for model parametrization.
+     * @tparam BaseModel - the transition or observation model to parametrise
+     * @tparam Params - the parametr generator types for the model
+     */
+    template<typename BaseModel, typename... Params>
+    class ParametrizedModel: public virtual BaseModel {
+    public:
+        static constexpr auto nParams = sizeof...(Params);
+
+        template<typename... Args>
+        explicit ParametrizedModel(std::vector<IParam*> parms, Args&&... args)
+                                    : BaseModel(std::forward<Args&&...>(args...)), params(std::move(parms)) { }
+
+        void update(const std::vector<double>& new_drivers);
+    private:
+        template<std::size_t... Is>
+        void update_impl(std::index_sequence<Is...>);
+
+        std::vector<IParam*> params;
+    };
 
 
     template <typename Derived>
@@ -325,6 +348,29 @@ namespace ssmodels
                                                                            std::shared_ptr<RNG> &rng) const {
         RandomSample<RNG, std::poisson_distribution<> > rsg(rng);
         return PoissonDist::sample(getMean(cur_state), rsg);
+    }
+
+
+    template<typename Base, typename... Params>
+    void ParametrizedModel<Base, Params...>::update(const std::vector<double>& new_drivers) {
+        if (new_drivers.size() != params.size() || new_drivers.size() != sizeof...(Params)) {
+            std::cerr << "Number of parameter drivers must be equal to number of parameters. Nothing updated." << std::endl;
+            return;
+        }
+
+        for (int i=0; i<params.size(); ++i) {
+            params[i]->update(new_drivers[i]);
+        }
+
+        update_impl(std::index_sequence_for<Params...>());
+    }
+
+    template<typename Base, typename... Params>
+    template<std::size_t... Is>
+    void ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
+        // FIXME: preferably to call another special method (eg., update) where only necessary values will be changed,
+        //  with inputs marked whether they need to be updated or not
+        Base::init(dynamic_cast<Params>(params[Is])->param...);
     }
 
 }

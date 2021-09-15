@@ -54,11 +54,25 @@ namespace schemes {
     };
 
 
+    struct ParameterUpdate {
+        template<typename DerivedA, typename DerivedB>
+        void propose(const Eigen::DenseBase<DerivedA> &x,
+                     const Eigen::DenseBase<DerivedB> &mu,
+                     const Eigen::LLT<Matrix> &L);
+
+        bool accept();
+
+        double proposal;
+    };
+
+
     template<typename TrM, typename ObsM, typename RNG>
     class SingleStateScheme: public ISampler {
     public:
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
+        typedef TrM TrM_type;
+        typedef ObsM ObsM_type;
 
         SingleStateScheme() = default;
         explicit SingleStateScheme(std::size_t) { }; // <-- for providing conformity with other scheme
@@ -98,9 +112,12 @@ namespace schemes {
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, 1> State_type;
+        typedef TrM TrM_type;
+        typedef ObsM ObsM_type;
 
-        EmbedHmmSchemeND() = default; // <-- for providing conformity with other schemes
-        explicit EmbedHmmSchemeND(Index psize, bool flip=false) : pool_size(psize), noflip(!flip) { }
+        EmbedHmmSchemeND(Index psize, bool flip) : pool_size(psize), noflip(!flip) { }
+        explicit EmbedHmmSchemeND(Index psize) : EmbedHmmSchemeND(psize, false) { }
+        EmbedHmmSchemeND() : EmbedHmmSchemeND(1) { } // <-- for providing conformity with other schemes
 
         void init(const Matrix &observations, const TransitionModel &tr_model) override;
         void init(const Matrix_int &observations, const TransitionModel &tr_model) override;
@@ -136,6 +153,23 @@ namespace schemes {
         RandomSample<RNG, std::uniform_int_distribution<Index> > randint;
     };
 
+
+    template<typename BaseScheme>
+    class WithParameterUpdate: public BaseScheme {
+    public:
+        template<typename... Args>
+        WithParameterUpdate(int npupdates, Args&&... args)
+                            : BaseScheme(std::forward<Args&&...>(args...)),
+                            num_param_updates(npupdates) { }
+
+        void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
+
+    private:
+        int num_param_updates;
+        std::vector<double> trm_drivers;
+        std::vector<double> obsm_drivers;
+        ParameterUpdate par_update;
+    };
 
     template<typename ObsM, typename RNG>
     template<typename DerivedA, typename DerivedB>
@@ -393,6 +427,30 @@ namespace schemes {
         for (Index t = tr_model.length(); t > 0; --t) {
             Index tk = index_update(static_cast<const TrM&>(tr_model), t);
             cur_sample.col(t-1) = pool[tk].col(t-1);
+        }
+    }
+
+
+    template<typename BaseScheme>
+    void WithParameterUpdate<BaseScheme>::sample(const TransitionModel &tr_model, const ObservationModel &obs_model) {
+        BaseScheme::sample(tr_model, obs_model);
+
+        for (int i=0; i<num_param_updates; ++i) {
+            for (int j=0; j<BaseScheme::TrM_type::nParams; ++j) {
+                par_update.template propose(x, mu, L);  // <-- mu will depend whether it is a random walk or independent proposal; will not need x most probably; L will come from initialisation of param (?)
+                if (par_update.accept()) {
+                    trm_drivers.at(j) = par_update.proposal;
+                    // add acceptances (?)
+                }
+            }
+            for (int k=0; k<BaseScheme::ObsM_type::nParams; ++k) {
+                par_update.template propose(x, mu, L);
+                if (par_update.accept()) {
+                    obsm_drivers.at(k) = par_update.proposal;
+                }
+            }
+            static_cast<typename BaseScheme::TrM_type>(tr_model).update(trm_drivers);
+            static_cast<typename BaseScheme::ObsM_type>(obs_model).update(obsm_drivers);
         }
     }
 

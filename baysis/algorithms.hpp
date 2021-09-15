@@ -80,7 +80,7 @@ namespace algos {
 
         MCMC(const std::shared_ptr<TransitionModel> &tr_model, const std::shared_ptr<ObservationModel> &obs_model,
              const std::shared_ptr<Scheme> &sampling_scheme, int N,
-             const std::vector<double> &scalings = std::vector<double>(1, 1.), int thinning_factor = 1,
+             std::vector<double> scalings = std::vector<double>(1, 1.), int thinning_factor = 1,
              bool reverse = false);
 
         void provideData(const Matrix &observations, double) override;
@@ -172,11 +172,11 @@ namespace algos {
     MCMC<Scheme>::MCMC(const std::shared_ptr<TransitionModel> &tr_model,
                        const std::shared_ptr<ObservationModel> &obs_model,
                        const std::shared_ptr<Scheme> &sampling_scheme,
-                       int N, const std::vector<double>& scalings,
+                       int N, std::vector<double>  scalings,
                        int thinning_factor, bool reverse)
                        : accumulator(tr_model->stateDim(), tr_model->length(), 1+N/thinning_factor),
                        transitionM(tr_model), observationM(obs_model), sampler(sampling_scheme),
-                       numiter(N), thin(thinning_factor), run_reversed(reverse), scaling(scalings) {
+                       numiter(N), thin(thinning_factor), run_reversed(reverse), scaling(std::move(scalings)) {
         sampler->setScales(scaling);
         if (run_reversed) {
             std::size_t acc_size = 2 * (1 + numiter / thin);

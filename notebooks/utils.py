@@ -104,7 +104,7 @@ class ObservationSpec(Specification):
                              C=mean_coeff, D=args[0], controls=args[1].reshape(-1, 1))
         elif model_type == ModelType.BIMODAL_POISSON:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=model_type,
-                             C=mean_coeff.reshape(-1, 1), mean_function=args[0].mean_function())
+                             C=mean_coeff.reshape(-1, 1), mean_function=model_type.mean_function())
 
 
 class SamplerSpec(Specification):

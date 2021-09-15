@@ -34,7 +34,7 @@ namespace schemes {
     };
 
     /**
-     * Base class for Kalman filter schemes
+     * BaseModel class for Kalman filter schemes
      */
     class FilterBase : virtual public LinearStateBase {
     public:
@@ -105,7 +105,7 @@ namespace schemes {
     };
 
     /**
-     * Base class for all smoothing schemes
+     * BaseModel class for all smoothing schemes
      */
      class SmootherBase: virtual public LinearStateBase {
      public:

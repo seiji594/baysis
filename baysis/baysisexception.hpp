@@ -23,7 +23,7 @@
 
 
 /**
- *    Base class for all exception produced by the classes
+ *    BaseModel class for all exception produced by the classes
  */
 class ExceptionBase : virtual public std::exception
 {

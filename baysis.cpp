@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include "baysis/h5bridge.cpp"
+#include "baysis/paramgenerators.hpp"
 
 
 void Launch(const File& file);

@@ -216,7 +216,7 @@ public:
      * Samples one variate from a multivariate poisson distribution with 0 variance parameter;
      * @param lambda - vector of parameters of poisson distribution
      * @param rng - random numbers generator
-     * @return a multivariate normal variable
+     * @return a multivariate poisson variable
      */
     template<typename RNG>
     static inline Sample_type sample(const Vector& lambda, RandomSample<RNG, Dist_type>& rsg) {
