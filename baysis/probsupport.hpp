@@ -12,8 +12,8 @@
 #include <random>
 #include <cmath>
 #include <unsupported/Eigen/SpecialFunctions>
-//#include "baysisexception.hpp"
-//#include "matsupport.hpp"
+#include "baysisexception.hpp"
+#include "matsupport.hpp"
 
 const double PI = std::acos(-1);
 
@@ -93,6 +93,11 @@ class NormalDist {
 public:
     typedef std::normal_distribution<> Dist_type;
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
+    static constexpr int Nparams = 2;
+
+    static inline double variance(const double mu, const double sigma) {
+        return sigma * sigma;
+    }
     /**
      * Returns log density of normal distribution given the datapoint x; constants are ignored
      * @param x - a normal variable
@@ -165,6 +170,11 @@ class PoissonDist {
 public:
     typedef std::poisson_distribution<int> Dist_type;
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
+    static constexpr int Nparams = 1;
+
+    static inline double variance(const double lambda) {
+        return lambda;
+    }
     /**
      * Returns log density of poisson distribution given the datapoint x; constants are ignored
      * @param x - a poisson variable

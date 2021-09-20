@@ -64,7 +64,7 @@ void Launch(const File& file) {
     std:: cout << "\nRunning sampler for " << session.id << " with " << session.seeds.size() << " seeds:" << std::endl;
     for (u_long seed: session.seeds) {
         std::cout << "\trunning with seed " << seed << " ..." << std::endl;
-        session.mcmc->init(session.xinit, seed);
+        session.mcmc->reset(session.xinit, seed);
         session.mcmc->run();
         std::cout << "\tDone in " << accumulator.totalDuration() << "ms" << std::endl;
         // Saving results

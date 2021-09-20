@@ -11,6 +11,7 @@
 #define BAYSIS_MODELS_HPP
 
 #include <utility>
+#include <tuple>
 #include "baysisexception.hpp"
 #include "matsupport.hpp"
 #include "probsupport.hpp"
@@ -90,6 +91,9 @@ namespace ssmodels
 
         template<typename DerivedA, typename DerivedB>
         double logDensity(const Eigen::DenseBase<DerivedA> &curx, const Eigen::DenseBase<DerivedB> &prevx) const;
+
+        template<typename Derived>
+        double logDensity(const Eigen::DenseBase<Derived> &curx) const;
 
         template<typename RNG>
         Vector simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng, bool prior=false) const;
@@ -240,23 +244,43 @@ namespace ssmodels
     /**
      * Generic class to allow for model parametrization.
      * @tparam BaseModel - the transition or observation model to parametrise
-     * @tparam Params - the parametr generator types for the model
+     * @tparam Params - the parameter generator types for the model
      */
     template<typename BaseModel, typename... Params>
     class ParametrizedModel: public virtual BaseModel {
     public:
+        typedef std::tuple<Params...> Model_params;
         static constexpr auto nParams = sizeof...(Params);
 
         template<typename... Args>
-        explicit ParametrizedModel(std::vector<IParam*> parms, Args&&... args)
-                                    : BaseModel(std::forward<Args&&...>(args...)), params(std::move(parms)) { }
+        explicit ParametrizedModel(Model_params parms, Args&&... args);
 
+        // TODO: make all std::vector arguments Eigen::Vector arguments
+        template<typename RNG>
+        std::vector<double> reset(const std::shared_ptr<RNG>& rng);
         void update(const std::vector<double>& new_drivers);
+        double priorLogdensity(const std::vector<double>& new_drivers) const;
+
+        const Eigen::LLT<Matrix>& getParamsL() const {
+            return covL;
+        }
+
     private:
         template<std::size_t... Is>
         void update_impl(std::index_sequence<Is...>);
+        // Helpers to iterate over tuples
+        template <class F, size_t... Is>
+        constexpr auto static_for_impl(F&& f, std::index_sequence<Is...>) {
+            // TODO: if below doesn't work use solution in https://en.cppreference.com/w/cpp/utility/tuple/tuple
+            return (f(std::integral_constant<size_t, Is> {}),...);
+        }
+        template <size_t N, class F>
+        constexpr auto static_for(F&& f) {
+            return static_for_impl(std::forward<F>(f), std::make_index_sequence<N>{});
+        }
 
-        std::vector<IParam*> params;
+        Model_params params;
+        Eigen::LLT<Matrix> covL;
     };
 
 
@@ -301,6 +325,11 @@ namespace ssmodels
     double LGTransitionStationary::logDensity(const Eigen::DenseBase<DerivedA> &curx,
                                               const Eigen::DenseBase<DerivedB> &prevx) const {
         return NormalDist::logDensity(curx, getMean(prevx), LQ);
+    }
+
+    template<typename Derived>
+    double LGTransitionStationary::logDensity(const Eigen::DenseBase<Derived> &curx) const {
+        return NormalDist::logDensity(curx, getPriorMean(), LQprior);
     }
 
     template<typename RNG>
@@ -351,26 +380,65 @@ namespace ssmodels
     }
 
 
+    template<typename BaseModel, typename... Params>
+    template<typename... Args>
+    ParametrizedModel<BaseModel, Params...>::ParametrizedModel(ParametrizedModel::Model_params parms, Args &&... args)
+            : BaseModel(std::forward<Args&&...>(args...)),
+              params(std::move(parms)) {
+        Matrix cov = Matrix::Zero(nParams, nParams);
+        static_for<nParams>([&](auto I){
+            cov(I, I) = std::get<I>(params).variance();
+        });
+        covL.template compute(cov);
+    }
+
+    template<typename BaseModel, typename... Params>
+    template<typename RNG>
+    std::vector<double> ParametrizedModel<BaseModel, Params...>::reset(const std::shared_ptr<RNG>& rng) {
+        return {static_for<nParams>([&](auto I){
+            std::get<I>(params).initDraw(rng);
+        })};
+    }
+
+    template<typename BaseModel, typename... Params>
+    double ParametrizedModel<BaseModel, Params...>::priorLogdensity(const std::vector<double> &new_drivers) const {
+        double ld{0};
+        static_for<nParams>([&](auto I) {
+            ld += std::get<I>(params).logDensity(new_drivers[I]);
+        });
+        return ld;
+    }
+
     template<typename Base, typename... Params>
     void ParametrizedModel<Base, Params...>::update(const std::vector<double>& new_drivers) {
-        if (new_drivers.size() != params.size() || new_drivers.size() != sizeof...(Params)) {
+        if (new_drivers.size() != nParams) {
             std::cerr << "Number of parameter drivers must be equal to number of parameters. Nothing updated." << std::endl;
             return;
         }
 
-        for (int i=0; i<params.size(); ++i) {
-            params[i]->update(new_drivers[i]);
-        }
-
+        static_for<nParams>([&](auto I) {
+            std::get<I>(params).update(new_drivers.at(I));
+        });
+//        apply_updates<std::make_index_sequence<nParams> >(new_drivers);
         update_impl(std::index_sequence_for<Params...>());
     }
 
+//    template<typename BaseModel, typename... Params>
+//    template<std::size_t Idx, std::size_t... Ids>
+//    void ParametrizedModel<BaseModel, Params...>::apply_updates(const std::vector<double> &drivers) {
+//        std::get<Idx>(params).update(drivers[Idx]);
+//        apply_updates<std::index_sequence<Ids>...>(drivers);
+//    }
+
     template<typename Base, typename... Params>
     template<std::size_t... Is>
-    void ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
-        // FIXME: preferably to call another special method (eg., update) where only necessary values will be changed,
+    void
+    ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
+        // FIXME:
+        //  - preferably to call another special method (eg., update) where only necessary values will be changed,
         //  with inputs marked whether they need to be updated or not
-        Base::init(dynamic_cast<Params>(params[Is])->param...);
+        //  - for Transition model also recalc the prior
+        Base::init(std::get<Is>(params).param...);
     }
 
 }

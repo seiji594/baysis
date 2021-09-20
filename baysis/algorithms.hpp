@@ -28,7 +28,7 @@ namespace algos {
         virtual ~IMcmc() = default;
         virtual void provideData(const Matrix &observations, double) = 0;
         virtual void provideData(const Matrix_int &observations, int) = 0;
-        virtual void init(const Matrix &x_init, u_long seed) = 0;
+        virtual void reset(const Matrix &x_init, u_long seed) = 0;
         virtual void run() = 0;
         virtual std::shared_ptr<TransitionModel> getTransitionModel() const = 0;
         virtual std::shared_ptr<ObservationModel> getObservationModel() const = 0;
@@ -85,7 +85,7 @@ namespace algos {
 
         void provideData(const Matrix &observations, double) override;
         void provideData(const Matrix_int &observations, int) override;
-        void init(const Matrix& x_init, u_long seed) override;
+        void reset(const Matrix& x_init, u_long seed) override;
         void run() override;
         std::shared_ptr<TransitionModel> getTransitionModel() const override { return transitionM; }
         std::shared_ptr<ObservationModel> getObservationModel() const override { return observationM; }
@@ -196,15 +196,16 @@ namespace algos {
 
     template<typename Scheme>
     void MCMC<Scheme>::_provideData(const Data_type &observations) {
-        sampler->init(observations, *transitionM);
+        sampler->setData(observations);
         if (run_reversed)
             sampler->reverseObservations();
     }
 
     template<typename Scheme>
-    void MCMC<Scheme>::init(const Matrix& x_init, u_long seed) {
-        sampler->cur_sample = x_init;
+    void MCMC<Scheme>::reset(const Matrix& x_init, u_long seed) {
         sampler->reset(seed);
+        sampler->init(*transitionM, *observationM);
+        sampler->cur_sample = x_init;
         accumulator.reset();
     }
 
