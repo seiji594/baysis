@@ -13,6 +13,7 @@
 #include <vector>
 #include <unordered_map>
 #include <Eigen/Dense>
+#include "samplingschemes.hpp"
 
 
 class SampleAccumulator {
@@ -20,36 +21,73 @@ public:
     typedef typename decltype(std::chrono::high_resolution_clock::now())::rep Timedelta;
     typedef Matrix Sample_type;
 
-    SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
-    : samples(nsamples, Sample_type::Zero(nrows, ncols)), accepts() {}
+    SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples);
 
     void resize(std::size_t new_sz);
-    void addSample(const Sample_type &sample, std::size_t iter);
-    void setAcceptances(const Vector_int& acc);
+    template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>
+    void addSample(const Scheme<M1, M2, Rng>& sampler, std::size_t iter);
+    template<typename Scheme>
+    void addSample(const schemes::WithParameterUpdate<Scheme>& sampler, std::size_t iter);
+    template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>
+    void setAcceptances(const Scheme<M1, M2, Rng>& sampler);
+    template<typename Scheme>
+    void setAcceptances(const schemes::WithParameterUpdate<Scheme>& sampler);
     void setDuration(Timedelta dur);
     void setBurnin(double cutoff);
     void reset();
     Vector getSmoothedMeans(std::size_t t) const;
     Matrix getSmoothedCov(const Vector& means, std::size_t t) const;
     const std::vector<Sample_type>& getSamples() const;
+    const std::vector<Vector>& getParametersSamples() const;
     const std::vector<int>& getAcceptances() const;
+    std::unordered_map<std::string, int> getParametersAcceptances() const;
     Timedelta totalDuration() const;
 
 private:
     int offset{0};
     std::vector<Sample_type> samples;
+    std::vector<Vector> par_samples;
     std::vector<int> accepts;
+    std::unordered_map<std::string, int> par_accepts;
     Timedelta duration{};
 };
 
-void SampleAccumulator::addSample(const Sample_type &sample, std::size_t iter) {
-    samples.at(iter) = sample;
+
+SampleAccumulator::SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
+                                    : samples(nsamples, Sample_type::Zero(nrows, ncols)),
+                                    par_samples(nsamples),
+                                    accepts() { }
+
+template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>
+void SampleAccumulator::addSample(const Scheme<M1, M2, Rng>& sampler, std::size_t iter) {
+    samples.at(iter) = sampler.cur_sample;
 }
 
-void SampleAccumulator::setAcceptances(const Vector_int &acc) {
-    for (int i = 0; i < acc.size(); ++i) {
-        accepts.push_back(acc(i));
+template<typename Scheme>
+void SampleAccumulator::addSample(const schemes::WithParameterUpdate<Scheme> &sampler, std::size_t iter) {
+    samples.at(iter) = sampler.cur_sample;
+    if (iter == 0) {
+        std::size_t nsamples = samples.size();
+        std::size_t nparams = sampler.numParams();
+        par_samples.resize(nsamples, Vector::Zero(nparams));
     }
+    par_samples.at(iter) << sampler.trm_drivers, sampler.obsm_drivers;
+}
+
+template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>
+void SampleAccumulator::setAcceptances(const Scheme<M1, M2, Rng>& sampler) {
+    for (int i = 0; i < sampler.acceptances.size(); ++i) {
+        accepts.push_back(sampler.acceptances(i));
+    }
+}
+
+template<typename Scheme>
+void SampleAccumulator::setAcceptances(const schemes::WithParameterUpdate<Scheme> &sampler) {
+    for (int i = 0; i < sampler.acceptances.size(); ++i) {
+        accepts.push_back(sampler.acceptances(i));
+    }
+    par_accepts.template emplace("trm_par_acceptances", sampler.trm_par_acceptances);
+    par_accepts.template emplace("obsm_par_acceptances", sampler.obsm_par_acceptances);
 }
 
 void SampleAccumulator::setDuration(Timedelta dur) {
@@ -60,6 +98,7 @@ void SampleAccumulator::resize(std::size_t new_sz) {
     std::size_t ncols = samples.front().cols();
     std::size_t nrows = samples.front().rows();
     samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
+    par_samples = std::vector<Vector>(new_sz);
 }
 
 void SampleAccumulator::reset() {
@@ -91,8 +130,16 @@ const std::vector<SampleAccumulator::Sample_type>& SampleAccumulator::getSamples
     return samples;
 }
 
+const std::vector<Vector> &SampleAccumulator::getParametersSamples() const {
+    return par_samples;
+}
+
 const std::vector<int> &SampleAccumulator::getAcceptances() const {
     return accepts;
+}
+
+std::unordered_map<std::string, int> SampleAccumulator::getParametersAcceptances() const {
+    return par_accepts;
 }
 
 SampleAccumulator::Timedelta SampleAccumulator::totalDuration() const {

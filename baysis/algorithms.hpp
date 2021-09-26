@@ -217,7 +217,7 @@ namespace algos {
             sampler->updateIter(i);
             sampler->sample(*transitionM, *observationM);
             if (i % thin == 0)
-                accumulator.addSample(sampler->cur_sample, (1+run_reversed)*i/thin);
+                accumulator.addSample(*sampler, (1+run_reversed)*i/thin);
 
             if (run_reversed) {
                 sampler->setReversed();
@@ -226,12 +226,12 @@ namespace algos {
                 sampler->cur_sample.rowwise().reverseInPlace();
                 sampler->setReversed();
                 if (i % thin == 0)
-                    accumulator.addSample(sampler->cur_sample, 2*(i/thin)+1);
+                    accumulator.addSample(*sampler, 2*(i/thin)+1);
             }
         }
         auto end = std::chrono::high_resolution_clock::now();
         accumulator.setDuration(std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-        accumulator.setAcceptances(sampler->acceptances);
+        accumulator.setAcceptances(*sampler);
 
     }
 

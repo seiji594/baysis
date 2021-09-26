@@ -15,6 +15,8 @@
 
 #include <map>
 #include <memory>
+#include <utility>
+#include <tuple>
 #include "../extern/typelist.hpp"
 
 
@@ -228,6 +230,18 @@ struct zip {
     };
 };
 
+
+// Helpers to iterate over tuples
+template <class Tup, class F, std::size_t... Is>
+constexpr auto static_for_impl(Tup&& t, F&& f, std::index_sequence<Is...>) {
+    // FIXME: if below doesn't work use solution in https://en.cppreference.com/w/cpp/utility/tuple/tuple
+    return (f(std::integral_constant<size_t, Is> {}, std::get<Is>(t)),...);
+}
+
+template <class... T, class F>
+constexpr auto static_for(const std::tuple<T...>& t, F&& f) {
+    return static_for_impl(t, std::forward<F>(f), std::make_index_sequence<sizeof...(T)>{});
+}
 
 
 

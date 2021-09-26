@@ -14,9 +14,6 @@
 #include "matsupport.hpp"
 
 
-enum class ParamType {Variable, Constant};
-
-
 struct IParam {
     virtual ~IParam() = default;
 
@@ -93,7 +90,8 @@ struct VectorParam: public IParam {
 
 
 struct ConstMatrix: IParam {
-    explicit ConstMatrix(std::size_t shape, double constant): param(Matrix::Constant(shape, shape, constant)) { }
+    ConstMatrix(std::size_t shape, double constant): param(Matrix::Constant(shape, shape, constant)) { }
+    explicit ConstMatrix(std::size_t shape): ConstMatrix(shape, 1.) { }
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng) { return 0.; }
@@ -106,7 +104,8 @@ struct ConstMatrix: IParam {
 
 
 struct ConstVector: IParam {
-    explicit ConstVector(std::size_t shape, double constant): param(Vector::Constant(shape, constant)) { }
+    ConstVector(std::size_t shape, double constant): param(Vector::Constant(shape, constant)) { }
+    explicit ConstVector(std::size_t shape): ConstVector(shape, 1.) { }
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng) { return 0.; }

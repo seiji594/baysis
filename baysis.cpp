@@ -72,8 +72,9 @@ void Launch(const File& file) {
         ss << PATH_TO_RESULTS << session.id << "_results_seed" << seed << ".h5";
         std::string resfname = ss.str();
         File rfile(resfname, File::ReadWrite | File::Create | File::Overwrite);
-        if (!saveResults<double>(rfile, "samples", accumulator.getSamples(),
-                                 {{"duration", accumulator.totalDuration()}}) ||
+        std::unordered_map<std::string, int> attributes(accumulator.getParametersAcceptances());
+        attributes.emplace("duration", accumulator.totalDuration());
+        if (!saveResults<double>(rfile, "samples", accumulator.getSamples(), attributes) ||
                 !saveResults<int>(rfile, "accepts", accumulator.getAcceptances())) {
             std::cout << "\tskipping saving sampling results for seed " << seed << std::endl;
         } else {

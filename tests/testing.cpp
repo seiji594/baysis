@@ -12,16 +12,17 @@
 #include "../baysis/probsupport.hpp"
 //#include "../baysis/filterschemes.cpp"
 //#include "../baysis/ifactories.hpp"
-//#include "../baysis/samplingschemes.hpp"
-//#include "../baysis/algorithms.hpp"
-//#include "../baysis/models.cpp"
+#include "../baysis/samplingschemes.hpp"
+#include "../baysis/algorithms.hpp"
+#include "../baysis/models.cpp"
 //#include "../baysis/h5bridge.cpp"
 //#include "../baysis/accumulator.hpp"
-//#include "../baysis/dataprovider.hpp"
+#include "../baysis/dataprovider.hpp"
 #include "../baysis/paramgenerators.hpp"
 
 using namespace std;
-//using namespace schemes;
+using namespace ssmodels;
+using namespace schemes;
 /*
 template<typename TList, std::size_t... I>
 auto a2t_impl(std::index_sequence<I...>)
@@ -161,7 +162,7 @@ int main(int argc, const char * argv[]) {
 //    std:cout << mu << std::endl;
 */
 
-/*
+
     //! Some toy models for testing
    // Set up the model
     Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
@@ -184,10 +185,10 @@ int main(int argc, const char * argv[]) {
     Sinit *= 0.75; //
 
     std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
-    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
-    trm->_provideData(A,Q);
+    trm->init(A, Q);
     trm->setPrior(minit, Sinit);
-    obsm->initialize(C, R);
+/*    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
+    obsm->init(C, R);
 
     DataGenerator<LGTransitionStationary, LGObservationStationary> simulator(trm, obsm, 1);
     std::cout << "Observations:\n" << simulator.getData() << std::endl;
@@ -242,7 +243,7 @@ int main(int argc, const char * argv[]) {
     std::cout << "Smoothed state means:\n" << kalmsm.smoothed_means << std::endl;
     std::cout << "Smoothed state covs:\n" << kalmsm.smoothed_covs << std::endl;
 */
-/*
+
     //! Checking Poisson models
     size_t xdim = 4, ydim = 4, T=10;
     Matrix sigma = Vector::Constant(ydim, 0.6).asDiagonal();
@@ -250,12 +251,12 @@ int main(int argc, const char * argv[]) {
     Vector ctrls = Vector::Constant(ydim, -0.4);
     Vector x = Vector::Random(xdim);
     // Generalised Poisson
-    auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
-    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
-    gpoi->_provideData(sigma.diagonal());
+//    auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
+//    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
+//    gpoi->_provideData(sigma.diagonal());
     // Linear Poisson
     std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
-    lpoi->initialize(sigma, D, ctrls);
+    lpoi->init(sigma, D, ctrls);
 
 //    std::cout << "State:\t" << x.transpose() << std::endl;
 //    std::cout << "Mean:\t" << gpoi.getMean(x).transpose() << std::endl;
@@ -265,9 +266,10 @@ int main(int argc, const char * argv[]) {
 //    std::cout << "Simulated obs:\t" << y.transpose() << std::endl;
 //    std::cout << "Logdensity: " << gpoi.logDensity(y, x) << std::endl;
 
-    DataGenerator<LGTransitionStationary, GPObservationStationary> simulator_poi(trm, gpoi, 1);
-    std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
-*/
+    DataGenerator<LGTransitionStationary, LPObservationStationary> simulator_poi;
+    simulator_poi.generate(trm, lpoi, 1);
+//    std::cout << "Observations:\n" << simulator_poi.getData() << std::endl;
+
 /*
     //! Single state Metropolis sampler
     using Sampler_type = SingleStateScheme<LGTransitionStationary, LGObservationStationary, std::mt19937>;
@@ -295,40 +297,47 @@ int main(int argc, const char * argv[]) {
     std::cout << "Cov at T\n" << accumulator.getSmoothedCov(means, 9) << std::endl;
     accumulator.save("test2", std::unordered_map<std::string, int>());
 */
-    /*
+/*
        //! Embedded HMM sampler
-       using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, GPObservationStationary, std::mt19937>;
-       std::shared_ptr<Sampler_type> sampler(make_shared<Sampler_type>(5, true));  // <-- 5 pool states
+       using Sampler_type = EmbedHmmSchemeND<LGTransitionStationary, LPObservationStationary, std::mt19937>;
+       std::shared_ptr<Sampler_type> sampler(std::make_shared<Sampler_type>(5, true));  // <-- 5 pool states
 
-       algos::MCMC<Sampler_type> ehmm(trm, gpoi, sampler, 100, {0.1, 0.3}, 1, true);
+       algos::MCMC<Sampler_type> ehmm(trm, lpoi, sampler, 100, {0.1, 0.3}, 1, true);
        Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
-       ehmm.initialize(simulator_poi.getData());
-       ehmm.setData(init_x, 1);
+       ehmm.provideData(simulator_poi.getData(), int{});
+       ehmm.reset(init_x, 1);
        ehmm.run();
 
-       for (const auto& s: ehmm.accumulator.samples) {
+       for (const auto& s: ehmm.getStatistics().getSamples()) {
            std::cout << s << std::endl;
        }
 
        std::cout << "Acceptances:" << std::endl;
        int i = 0;
-       for (auto& acc: ehmm.accumulator.accepts) {
+       for (auto& acc: ehmm.getStatistics().getAcceptances()) {
            if (i == 10)
                std::cout << std::endl;
            std::cout << acc << "\t";
            ++i;
        }
-       std::cout << "\nDuration: " << ehmm.accumulator.duration << "ms" << std::endl;
-   */
+       std::cout << "\nDuration: " << ehmm.getStatistics().totalDuration() << "ms" << std::endl;
+*/
+    DiagonalMatrixParam<NormalDist> parA(xdim);
+    SymmetricMatrixParam<NormalDist> parQ(xdim);
+    VectorParam<NormalDist> parctrl(xdim);
+    DiagonalMatrixParam<NormalDist> parC(xdim);
+    ConstMatrix parD(xdim);
 
-    DiagonalMatrixParam<NormalDist> A(5);
-    SymmetricMatrixParam<NormalDist> C(5);
     std::vector<double> Aprior{0., 0.25};
-    std::vector<double> Cprior{1., 0.5};
+    std::vector<double> Qprior{1., 0.5};
+    std::vector<double> Cprior{0.6, 0.7};
+    std::vector<double> ctrl_prior{-0.4, 0.1};
 
-    A.setPrior(Aprior);
-    C.setPrior(Cprior);
-
+    parA.setPrior(Aprior);
+    parQ.setPrior(Qprior);
+    parC.setPrior(Cprior);
+    parctrl.setPrior(ctrl_prior);
+/*
     double Adriver = A.initDraw(rng);
     double Cdriver = C.initDraw(rng);
 
@@ -342,7 +351,50 @@ int main(int argc, const char * argv[]) {
 
     std::cout << "log density of driver for A = " << A.logDensity(checkA) << std::endl;
     std::cout << "log density of driver for C = " << C.logDensity(checkC) << std::endl;
+*/
+    auto trm_params = std::make_tuple(parA, parQ);
+    auto partrm = std::make_shared<ParametrizedModel<LGTransitionStationary,
+                                                DiagonalMatrixParam<NormalDist>,
+                                                SymmetricMatrixParam<NormalDist> > >(trm_params, T, xdim);
+    partrm->setPrior(Vector::Zero(xdim), Matrix::Identity(xdim, xdim));
 
+    auto obsm_params = std::make_tuple(parC, parD, parctrl);
+    auto parobsm = std::make_shared<ParametrizedModel<LPObservationStationary,
+                                DiagonalMatrixParam<NormalDist>,
+                                ConstMatrix, VectorParam<NormalDist> > >(obsm_params, T, xdim, xdim, xdim);
+
+    using Trm_type = ParametrizedModel<LGTransitionStationary,
+                                    DiagonalMatrixParam<NormalDist>,
+                                    SymmetricMatrixParam<NormalDist> >;
+    using Obsm_type = ParametrizedModel<LPObservationStationary,
+                                        DiagonalMatrixParam<NormalDist>,
+                                        ConstMatrix, VectorParam<NormalDist> >;
+    using PSampler_type = SingleStateScheme<Trm_type, Obsm_type, std::mt19937>;
+
+//    auto sampler = WithParameterUpdate<Sampler_type>(15);
+    std::shared_ptr<PSampler_type> psampler(std::make_shared<WithParameterUpdate<PSampler_type> >(15));
+    algos::MCMC<PSampler_type> pehmm(trm, lpoi, psampler, 100, {0.1, 0.3}, 1, true);
+    Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
+    pehmm.provideData(simulator_poi.getData(), int{});
+    pehmm.reset(init_x, 1);
+    pehmm.run();
+
+    for (const auto& s: pehmm.getStatistics().getParametersSamples()) {
+        std::cout << s << std::endl;
+    }
+
+    std::cout << "Parameters acceptances:" << std::endl;
+    for (auto& acc: pehmm.getStatistics().getParametersAcceptances()) {
+        std::cout << acc.first << ": " << acc.second << std::endl;
+    }
+    std::cout << "\nDuration: " << pehmm.getStatistics().totalDuration() << "ms" << std::endl;
+
+/*
+    // testing Map<> object of Eigen
+    int data[] = {1,2,3,4,5,6,7,8,9};
+    Vector_int v = Eigen::Map<Vector_int>(data, 9);
+    std::cout << typeid(v).name() << v << std::endl;
+*/
 
     return 0;
 }
