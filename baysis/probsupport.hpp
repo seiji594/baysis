@@ -240,4 +240,6 @@ public:
     }
 };
 
+// TODO: add InverseGamma (make out of std::gamma dist) and Uniform distributions
+
 #endif //BAYSIS_PROBSUPPORT_HPP

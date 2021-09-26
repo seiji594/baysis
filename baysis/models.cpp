@@ -39,21 +39,21 @@ namespace ssmodels {
         setInputM(A);
         setControlM(B);
         Q = Cov;
-        if (!NumericalRcond::isSymmetric(Q)) {
-            throw LogicException("Transition model. Covariance matrix not symmetric");
-        }
+//        if (!NumericalRcond::isSymmetric(Q)) {
+//            throw LogicException("Transition model. Covariance matrix not symmetric");
+//        }
         LQ.compute(Q);
-        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix not PD");
+//        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix not PD");
         Q_inv = Q.inverse();
     }
 
     void LGTransitionStationary::setPrior(const Vector &mu, const Matrix &sigma) {
         Q_prior = sigma;
-        if (!NumericalRcond::isSymmetric(Q_prior)) {
-            throw LogicException("Transition model. Initial covariance matrix not symmetric");
-        }
+//        if (!NumericalRcond::isSymmetric(Q_prior)) {
+//            throw LogicException("Transition model. Initial covariance matrix not symmetric");
+//        }
         LQprior.compute(Q_prior);
-        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix not PD");
+//        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix not PD");
         Q_prior_inv = Q_prior.inverse();
         mu_prior = mu;
     }

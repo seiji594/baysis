@@ -66,12 +66,12 @@ void SampleAccumulator::addSample(const Scheme<M1, M2, Rng>& sampler, std::size_
 template<typename Scheme>
 void SampleAccumulator::addSample(const schemes::WithParameterUpdate<Scheme> &sampler, std::size_t iter) {
     samples.at(iter) = sampler.cur_sample;
+    std::size_t nparams = sampler.numParams();
     if (iter == 0) {
         std::size_t nsamples = samples.size();
-        std::size_t nparams = sampler.numParams();
         par_samples.resize(nsamples, Vector::Zero(nparams));
     }
-    par_samples.at(iter) << sampler.trm_drivers, sampler.obsm_drivers;
+    par_samples.at(iter) = (Vector(nparams) << sampler.trm_drivers, sampler.obsm_drivers).finished();
 }
 
 template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>

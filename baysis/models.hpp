@@ -373,7 +373,7 @@ namespace ssmodels
             : BaseModel(std::forward<Args&&>(args)...),
               params(std::move(parms)) {
         Matrix cov = Matrix::Zero(nParams, nParams);
-        static_for(params, [&](auto I, auto p){
+        static_for(params, [&](auto I, auto& p){
             cov(I, I) = p.variance();
         });
         covL.template compute(cov);
@@ -382,15 +382,17 @@ namespace ssmodels
     template<typename BaseModel, typename... Params>
     template<typename RNG>
     Vector ParametrizedModel<BaseModel, Params...>::reset(const std::shared_ptr<RNG>& rng) {
-        return (Vector(nParams) << static_for(params, [&](auto I, auto p){
-            return p.initDraw(rng);
-        })).finished();
+        Vector retval(nParams);
+        static_for(params, [&](auto I, auto& p){
+            retval(I) = p.initDraw(rng);
+        });
+        return retval;
     }
 
     template<typename BaseModel, typename... Params>
     double ParametrizedModel<BaseModel, Params...>::priorLogdensity(const Vector &new_drivers) const {
         double ld{0};
-        static_for(params, [&](auto I, auto p) {
+        static_for(params, [&](auto I, auto& p) {
             ld += p.logDensity(new_drivers(I));
         });
         return ld;
@@ -403,7 +405,7 @@ namespace ssmodels
             return;
         }
 
-        static_for(params, [&](auto I, auto p) {
+        static_for(params, [&](auto I, auto& p) {
             p.update(new_drivers(I));
         });
 //        apply_updates<std::make_index_sequence<nParams> >(new_drivers);
@@ -420,6 +422,7 @@ namespace ssmodels
     template<typename Base, typename... Params>
     template<std::size_t... Is>
     void ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
+        // FIXME: only update those parts of the model that are necessary for logDensity calculations
         Base::init(std::get<Is>(params).param...);
         if (typeid(Base) == typeid(LGTransitionStationary)) {
             AutoregressiveStationaryCov prior_cov;

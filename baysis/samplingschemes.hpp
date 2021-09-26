@@ -80,7 +80,7 @@ namespace schemes {
         RandomSample<RNG, std::normal_distribution<> > norm;
         Vector proposal;
         double cur_prop_ld{};
-        double eps{};
+        double eps{1.};
 
     private:
         template<typename Derived>
@@ -95,7 +95,6 @@ namespace schemes {
     template<typename TrM, typename ObsM, typename RNG>
     class SingleStateScheme: public ISampler {
     public:
-        enum {Parametrised = false};
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
         typedef RNG Rng_type;
@@ -139,7 +138,6 @@ namespace schemes {
     class EmbedHmmSchemeND: public ISampler{
         enum {even, odd};
     public:
-        enum {Parametrised = false};
         typedef std::size_t Index;
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
@@ -193,7 +191,9 @@ namespace schemes {
     template<typename BaseScheme>
     class WithParameterUpdate: public BaseScheme {
     public:
-        enum {Parametrised = true};
+        typedef typename BaseScheme::TrM_type TrM_type;
+        typedef typename BaseScheme::ObsM_type ObsM_type;
+        typedef typename BaseScheme::Rng_type Rng_type;
 
         template<typename... Args>
         explicit WithParameterUpdate(int npupdates, Args&&... args)
@@ -251,6 +251,7 @@ namespace schemes {
     template<typename ParM, typename RNG>
     template<typename Derived>
     void ParameterUpdate<ParM, RNG>::propose(const Eigen::DenseBase<Derived> &mu, const Eigen::LLT<Matrix> &L) {
+        // FIXME: eps is never set anywhere
         proposal = NormalDist::sample(mu.derived(), L, norm, eps);
     }
 
@@ -261,8 +262,9 @@ namespace schemes {
         for (int t = 0; t < model.length(); ++t) {
             if (t == 0) {
                 ll += model.logDensity(x.col(t));
+            } else {
+                ll += model.logDensity(x.col(t), x.col(t-1));
             }
-            ll += model.logDensity(x.col(t), x.col(t-1));
         }
         return ll;
     }
@@ -539,19 +541,15 @@ namespace schemes {
 
     template<typename BaseScheme>
     void WithParameterUpdate<BaseScheme>::init(TransitionModel &tr_model, ObservationModel &obs_model) {
-        trm_drivers = static_cast<typename BaseScheme::TrM_type&>(tr_model)
-                .reset(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
-        static_cast<typename BaseScheme::TrM_type&>(tr_model).update(trm_drivers);
-        trm_par_update.cur_prop_ld = static_cast<typename BaseScheme::TrM_type&>(tr_model)
-                .priorLogdensity(trm_drivers);
+        trm_drivers = static_cast<TrM_type&>(tr_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
+        static_cast<TrM_type&>(tr_model).update(trm_drivers);
+        trm_par_update.cur_prop_ld = static_cast<TrM_type&>(tr_model).priorLogdensity(trm_drivers);
 
-        obsm_drivers = static_cast<typename BaseScheme::ObsM_type&>(obs_model)
-                .reset(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
-        static_cast<typename BaseScheme::ObsM_type&>(obs_model).update(obsm_drivers);
-        obsm_par_update.cur_prop_ld = static_cast<typename BaseScheme::ObsM_type&>(obs_model)
-                .priorLogdensity(obsm_drivers);
+        obsm_drivers = static_cast<ObsM_type&>(obs_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
+        static_cast<ObsM_type&>(obs_model).update(obsm_drivers);
+        obsm_par_update.cur_prop_ld = static_cast<ObsM_type&>(obs_model).priorLogdensity(obsm_drivers);
 
-        BaseScheme::init(const_cast<TransitionModel&>(tr_model), const_cast<ObservationModel&>(obs_model));
+        BaseScheme::init(tr_model, obs_model);
     }
 
     template<typename BaseScheme>
@@ -559,41 +557,38 @@ namespace schemes {
         BaseScheme::reset(seed);
         trm_par_acceptances = 0;
         obsm_par_acceptances = 0;
-        trm_par_update.uniform = RandomSample<typename BaseScheme::Rng_type, std::uniform_real_distribution<> >(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
-        trm_par_update.norm = RandomSample<typename BaseScheme::Rng_type, std::normal_distribution<> >(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
-        obsm_par_update.uniform = RandomSample<typename BaseScheme::Rng_type, std::uniform_real_distribution<> >(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
-        obsm_par_update.norm = RandomSample<typename BaseScheme::Rng_type, std::normal_distribution<> >(std::static_pointer_cast<typename BaseScheme::Rng_type>(BaseScheme::rng));
+        trm_par_update.uniform = RandomSample<Rng_type, std::uniform_real_distribution<> >(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
+        trm_par_update.norm = RandomSample<Rng_type, std::normal_distribution<> >(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
+        obsm_par_update.uniform = RandomSample<Rng_type, std::uniform_real_distribution<> >(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
+        obsm_par_update.norm = RandomSample<Rng_type, std::normal_distribution<> >(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
     }
 
     template<typename BaseScheme>
     void WithParameterUpdate<BaseScheme>::sample(TransitionModel &tr_model, ObservationModel &obs_model) {
-        BaseScheme::sample(static_cast<TransitionModel&>(tr_model), static_cast<ObservationModel&>(obs_model));
+        BaseScheme::sample(tr_model, obs_model);
 
         for (int i=0; i<num_param_updates; ++i) {
-            trm_par_update.template propose(trm_drivers,
-                    static_cast<typename BaseScheme::TrM_type&>(tr_model).getParamsL());
-            static_cast<typename BaseScheme::TrM_type&>(tr_model).update(trm_par_update.proposal);
+            trm_par_update.template propose(trm_drivers, static_cast<TrM_type&>(tr_model).getParamsL());
+            static_cast<TrM_type&>(tr_model).update(trm_par_update.proposal);
 
-            if (trm_par_update.template accept(static_cast<typename BaseScheme::TrM_type&>(tr_model),
-                    BaseScheme::cur_sample)) {
+            if (trm_par_update.template accept(static_cast<TrM_type&>(tr_model), BaseScheme::cur_sample)) {
                 trm_drivers = trm_par_update.proposal;
                 ++trm_par_acceptances;
             }
 
-            obsm_par_update.template propose(obsm_drivers,
-                    static_cast<typename BaseScheme::ObsM_type&>(obs_model).getParamsL());
-            static_cast<typename BaseScheme::ObsM_type&>(obs_model).update(obsm_par_update.proposal);
+            obsm_par_update.template propose(obsm_drivers, static_cast<ObsM_type&>(obs_model).getParamsL());
+            static_cast<ObsM_type&>(obs_model).update(obsm_par_update.proposal);
 
-            if (obsm_par_update.template accept(static_cast<typename BaseScheme::ObsM_type&>(obs_model),
+            if (obsm_par_update.template accept(static_cast<ObsM_type&>(obs_model),
                     BaseScheme::data, BaseScheme::cur_sample)) {
                 obsm_drivers = obsm_par_update.proposal;
                 ++obsm_par_acceptances;
             }
         }
-        static_cast<typename BaseScheme::TrM_type&>(tr_model).update(trm_drivers);
-        static_cast<typename BaseScheme::ObsM_type&>(obs_model).update(obsm_drivers);
+        static_cast<TrM_type&>(tr_model).update(trm_drivers);
+        static_cast<ObsM_type&>(obs_model).update(obsm_drivers);
 
-        BaseScheme::cache(static_cast<TransitionModel&>(tr_model));
+        BaseScheme::cache(tr_model);
     }
 
 

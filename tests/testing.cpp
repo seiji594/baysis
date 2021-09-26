@@ -371,16 +371,15 @@ int main(int argc, const char * argv[]) {
                                         ConstMatrix, VectorParam<NormalDist> >;
     using PSampler_type = SingleStateScheme<Trm_type, Obsm_type, std::mt19937>;
 
-//    auto sampler = WithParameterUpdate<Sampler_type>(15);
-    std::shared_ptr<PSampler_type> psampler(std::make_shared<WithParameterUpdate<PSampler_type> >(15));
-    algos::MCMC<PSampler_type> pehmm(trm, lpoi, psampler, 100, {0.1, 0.3}, 1, true);
+    auto psampler(std::make_shared<WithParameterUpdate<PSampler_type> >(50));
+    algos::MCMC<WithParameterUpdate<PSampler_type> > pehmm(partrm, parobsm, psampler, 100, {0.1, 0.3}, 1, false);
     Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
     pehmm.provideData(simulator_poi.getData(), int{});
     pehmm.reset(init_x, 1);
     pehmm.run();
 
     for (const auto& s: pehmm.getStatistics().getParametersSamples()) {
-        std::cout << s << std::endl;
+        std::cout << s.transpose() << std::endl;
     }
 
     std::cout << "Parameters acceptances:" << std::endl;

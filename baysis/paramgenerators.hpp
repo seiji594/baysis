@@ -18,19 +18,19 @@ struct IParam {
     virtual ~IParam() = default;
 
     virtual void setPrior(const std::vector<double> &prior_param);
-    virtual double logDensity(double) = 0;
+    virtual double logDensity(double) const = 0;
     virtual void update(double) = 0;
-    virtual double variance() = 0;
+    virtual double variance() const = 0;
 
 protected:
     template<typename Dist, typename RNG, std::size_t... Is>
     double init_draw(std::shared_ptr<RNG> rng, std::index_sequence<Is...>);
 
     template<typename Dist, std::size_t... Is>
-    double log_density(double x, std::index_sequence<Is...>);
+    double log_density(double x, std::index_sequence<Is...>) const;
 
     template<typename Dist, std::size_t... Is>
-    double get_variance(std::index_sequence<Is...>);
+    double get_variance(std::index_sequence<Is...>) const;
 
     std::vector<double> prior;
 };
@@ -42,9 +42,9 @@ struct DiagonalMatrixParam: public IParam {
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng);
-    double logDensity(double x) override;
+    double logDensity(double x) const override;
     void update(double driver) override;
-    double variance() override;
+    double variance() const override;
 
     Matrix param;
 };
@@ -57,9 +57,9 @@ struct SymmetricMatrixParam: public IParam {
     void initDiagonal(double diag) { this->diagonal = diag; }
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng);
-    double logDensity(double x) override;
+    double logDensity(double x) const override;
     void update(double driver) override;
-    double variance() override;
+    double variance() const override;
 
     Matrix param;
 private:
@@ -69,7 +69,7 @@ private:
 
 struct AutoregressiveStationaryCov {
     template<typename Sym, typename Diag>
-    void update(const Sym& symm, const Diag& diag);
+    void update(const Diag &diag, const Sym &symm);
 
     Matrix param;
 };
@@ -81,9 +81,9 @@ struct VectorParam: public IParam {
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng);
-    double logDensity(double x) override;
+    double logDensity(double x) const override;
     void update(double driver) override;
-    double variance() override;
+    double variance() const override;
 
     Vector param;
 };
@@ -95,9 +95,9 @@ struct ConstMatrix: IParam {
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng) { return 0.; }
-    double logDensity(double x) override { return 0.; }
+    double logDensity(double x) const override { return 0.; }
     void update(double driver) override { }
-    double variance() override { return 0.; }
+    double variance() const override { return 0.; }
 
     Matrix param;
 };
@@ -109,9 +109,9 @@ struct ConstVector: IParam {
 
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng) { return 0.; }
-    double logDensity(double x) override { return 0.; }
+    double logDensity(double x) const override { return 0.; }
     void update(double driver) override { }
-    double variance() override { return 0.; }
+    double variance() const override { return 0.; }
 
     Vector param;
 };
@@ -122,7 +122,7 @@ void IParam::setPrior(const std::vector<double> &prior_param) {
 }
 
 template<typename Dist, size_t... Is>
-double IParam::log_density(double x, std::index_sequence<Is...>) {
+double IParam::log_density(double x, std::index_sequence<Is...>) const {
     if (prior.size() < sizeof...(Is)) {
         throw LogicException(
                 "Number of provided parameters is less than required for the specified prior distribution");
@@ -138,7 +138,7 @@ double IParam::init_draw(std::shared_ptr<RNG> rng, std::index_sequence<Is...>) {
 }
 
 template<typename Dist, size_t... Is>
-double IParam::get_variance(std::index_sequence<Is...>) {
+double IParam::get_variance(std::index_sequence<Is...>) const {
     return Dist::variance(prior[Is]...);
 }
 
@@ -160,12 +160,12 @@ void DiagonalMatrixParam<PriorDist>::update(const double driver) {
 }
 
 template<typename PriorDist>
-double DiagonalMatrixParam<PriorDist>::logDensity(double x) {
+double DiagonalMatrixParam<PriorDist>::logDensity(double x) const {
     return log_density<PriorDist>(x, std::make_index_sequence<PriorDist::Nparams>());
 }
 
 template<typename PriorDist>
-double DiagonalMatrixParam<PriorDist>::variance() {
+double DiagonalMatrixParam<PriorDist>::variance() const {
     return get_variance<PriorDist>(std::make_index_sequence<PriorDist::Nparams>());
 }
 
@@ -182,7 +182,7 @@ double SymmetricMatrixParam<PriorDist>::initDraw(std::shared_ptr<RNG> rng) {
 }
 
 template<typename PriorDist>
-double SymmetricMatrixParam<PriorDist>::logDensity(double x) {
+double SymmetricMatrixParam<PriorDist>::logDensity(double x) const {
     return log_density<PriorDist>(x, std::make_index_sequence<PriorDist::Nparams>());
 }
 
@@ -194,7 +194,7 @@ void SymmetricMatrixParam<PriorDist>::update(double driver) {
 }
 
 template<typename PriorDist>
-double SymmetricMatrixParam<PriorDist>::variance() {
+double SymmetricMatrixParam<PriorDist>::variance() const {
     return get_variance<PriorDist>(std::make_index_sequence<PriorDist::Nparams>());
 }
 
@@ -206,7 +206,7 @@ double VectorParam<PriorDist>::initDraw(std::shared_ptr<RNG> rng) {
 }
 
 template<typename PriorDist>
-double VectorParam<PriorDist>::logDensity(double x) {
+double VectorParam<PriorDist>::logDensity(double x) const {
     return log_density<PriorDist>(x, std::make_index_sequence<PriorDist::Nparams>());
 }
 
@@ -216,13 +216,13 @@ void VectorParam<PriorDist>::update(double driver) {
 }
 
 template<typename PriorDist>
-double VectorParam<PriorDist>::variance() {
+double VectorParam<PriorDist>::variance() const {
     return get_variance<PriorDist>(std::make_index_sequence<PriorDist::Nparams>());
 }
 
 
 template<typename Sym, typename Diag>
-void AutoregressiveStationaryCov::update(const Sym &symm, const Diag &diag) {
+void AutoregressiveStationaryCov::update(const Diag &diag, const Sym &symm) {
     double phi = diag.param(0,0);
     phi = 1 - phi*phi;
     param = symm.param / phi;
