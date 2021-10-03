@@ -13,6 +13,8 @@
 
 using namespace ssmodels;
 
+enum class SamplerType { metropolis=1, ehmm };
+
 
 namespace schemes {
 
@@ -64,6 +66,17 @@ namespace schemes {
     template<typename ParM, typename RNG>
     struct ParameterUpdate {
         template<typename Derived>
+        void init(const ParM &model,
+                  const Vector &drivers,
+                  const Eigen::DenseBase<Derived> &x);
+
+        template<typename DerivedA, typename DerivedB>
+        void init(const ParM &model,
+                  const Vector &drivers,
+                  const Eigen::DenseBase<DerivedA> &x,
+                  const Eigen::DenseBase<DerivedB> &y);
+
+        template<typename Derived>
         void propose(const Eigen::DenseBase<Derived> &mu,
                      const Eigen::LLT<Matrix> &L);
 
@@ -95,11 +108,14 @@ namespace schemes {
     template<typename TrM, typename ObsM, typename RNG>
     class SingleStateScheme: public ISampler {
     public:
+        enum { Type = static_cast<std::size_t>(SamplerType::metropolis) };
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
         typedef RNG Rng_type;
         typedef TrM TrM_type;
         typedef ObsM ObsM_type;
+
+        static std::size_t Id() { return Type * static_cast<std::size_t>(ModelType::size) + TrM::Id() + ObsM::Id(); }
 
         SingleStateScheme() = default;
         explicit SingleStateScheme(std::size_t): SingleStateScheme() { }; // <-- for providing conformity with other scheme
@@ -110,7 +126,7 @@ namespace schemes {
         void init(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
         void setScales(const std::vector<double>& scales) override { scalings = scales; }
         void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
-        void updateIter(int i) override { ar_update.eps = scalings[i % scalings.size()]; }
+        void updateIter(int i) override { ar_update.eps = scalings[i % std::min(scalings.size(), std::size_t(2))]; }
         void reset(u_long seed) override;
 
         Sample_type cur_sample;
@@ -138,6 +154,7 @@ namespace schemes {
     class EmbedHmmSchemeND: public ISampler{
         enum {even, odd};
     public:
+        enum { Type = static_cast<std::size_t>(SamplerType::ehmm) };
         typedef std::size_t Index;
         typedef Eigen::Matrix<typename TrM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Sample_type;
         typedef Eigen::Matrix<typename ObsM::Value_type, Eigen::Dynamic, Eigen::Dynamic> Data_type;
@@ -145,6 +162,8 @@ namespace schemes {
         typedef RNG Rng_type;
         typedef TrM TrM_type;
         typedef ObsM ObsM_type;
+
+        static std::size_t Id() { return Type * static_cast<std::size_t>(ModelType::size) + TrM::Id() + ObsM::Id(); }
 
         EmbedHmmSchemeND(Index psize, bool flip) : pool_size(psize), noflip(!flip) { }
         explicit EmbedHmmSchemeND(Index psize) : EmbedHmmSchemeND(psize, false) { }
@@ -249,9 +268,23 @@ namespace schemes {
 
 
     template<typename ParM, typename RNG>
+    template<typename DerivedA, typename DerivedB>
+    void ParameterUpdate<ParM, RNG>::init(const ParM &model, const Vector &drivers,
+                                          const Eigen::DenseBase<DerivedA> &x,
+                                          const Eigen::DenseBase<DerivedB> &y) {
+        cur_prop_ld = loglikelihood(model, y, x) + model.priorLogdensity(drivers);
+    }
+
+    template<typename ParM, typename RNG>
+    template<typename Derived>
+    void ParameterUpdate<ParM, RNG>::init(const ParM &model, const Vector &drivers,
+                                          const Eigen::DenseBase<Derived> &x) {
+        cur_prop_ld = loglikelihood(model, x) + model.priorLogdensity(drivers);
+    }
+
+    template<typename ParM, typename RNG>
     template<typename Derived>
     void ParameterUpdate<ParM, RNG>::propose(const Eigen::DenseBase<Derived> &mu, const Eigen::LLT<Matrix> &L) {
-        // FIXME: eps is never set anywhere
         proposal = NormalDist::sample(mu.derived(), L, norm, eps);
     }
 
@@ -436,7 +469,7 @@ namespace schemes {
 
     template<typename TrM, typename ObsM, typename RNG>
     void EmbedHmmSchemeND<TrM, ObsM, RNG>::met_update(const TrM &trm, const ObsM &obsm, Index t) {
-        ar_update.eps = scalings.front() + scalings.back() * ar_update.uniform.draw();
+        ar_update.eps = scalings.front() + scalings.at(std::min(scalings.size()-1, std::size_t(1))) * ar_update.uniform.draw();
         if (t == 0)
             ar_update.template propose(cur_state, trm.getPriorMean(), trm.getLprior());
         else
@@ -542,12 +575,18 @@ namespace schemes {
     template<typename BaseScheme>
     void WithParameterUpdate<BaseScheme>::init(TransitionModel &tr_model, ObservationModel &obs_model) {
         trm_drivers = static_cast<TrM_type&>(tr_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
-        static_cast<TrM_type&>(tr_model).update(trm_drivers);
-        trm_par_update.cur_prop_ld = static_cast<TrM_type&>(tr_model).priorLogdensity(trm_drivers);
+        static_cast<TrM_type &>(tr_model).update(trm_drivers, false);
+        trm_par_update.init(static_cast<TrM_type&>(tr_model), trm_drivers, BaseScheme::cur_sample);
 
         obsm_drivers = static_cast<ObsM_type&>(obs_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
-        static_cast<ObsM_type&>(obs_model).update(obsm_drivers);
-        obsm_par_update.cur_prop_ld = static_cast<ObsM_type&>(obs_model).priorLogdensity(obsm_drivers);
+        static_cast<ObsM_type &>(obs_model).update(obsm_drivers, false);
+        obsm_par_update.init(static_cast<ObsM_type&>(obs_model), obsm_drivers, BaseScheme::cur_sample, BaseScheme::data);
+
+        std::size_t sz = BaseScheme::scalings.size();
+        if (sz > 2) {
+            trm_par_update.eps = BaseScheme::scalings.at(2);
+            obsm_par_update.eps = BaseScheme::scalings.at(std::min(std::size_t(2), sz-1));
+        }
 
         BaseScheme::init(tr_model, obs_model);
     }
@@ -569,7 +608,7 @@ namespace schemes {
 
         for (int i=0; i<num_param_updates; ++i) {
             trm_par_update.template propose(trm_drivers, static_cast<TrM_type&>(tr_model).getParamsL());
-            static_cast<TrM_type&>(tr_model).update(trm_par_update.proposal);
+            static_cast<TrM_type &>(tr_model).update(trm_par_update.proposal, false);
 
             if (trm_par_update.template accept(static_cast<TrM_type&>(tr_model), BaseScheme::cur_sample)) {
                 trm_drivers = trm_par_update.proposal;
@@ -577,7 +616,7 @@ namespace schemes {
             }
 
             obsm_par_update.template propose(obsm_drivers, static_cast<ObsM_type&>(obs_model).getParamsL());
-            static_cast<ObsM_type&>(obs_model).update(obsm_par_update.proposal);
+            static_cast<ObsM_type &>(obs_model).update(obsm_par_update.proposal, false);
 
             if (obsm_par_update.template accept(static_cast<ObsM_type&>(obs_model),
                     BaseScheme::data, BaseScheme::cur_sample)) {
@@ -585,13 +624,11 @@ namespace schemes {
                 ++obsm_par_acceptances;
             }
         }
-        static_cast<TrM_type&>(tr_model).update(trm_drivers);
-        static_cast<ObsM_type&>(obs_model).update(obsm_drivers);
+        static_cast<TrM_type &>(tr_model).update(trm_drivers);
+        static_cast<ObsM_type &>(obs_model).update(obsm_drivers);
 
         BaseScheme::cache(tr_model);
     }
-
-
 
 }
 

@@ -32,4 +32,5 @@ endif()
 target_link_libraries (Baysis Eigen3::Eigen)
 target_link_libraries(Testing Eigen3::Eigen)
 target_link_libraries (Baysis ${LINK_LIBS})
+target_link_libraries (Testing ${LINK_LIBS})
 

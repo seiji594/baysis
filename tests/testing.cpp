@@ -8,14 +8,15 @@
 
 #include <iostream>
 #include <chrono>
+#include <cxxabi.h>
 //#include <unordered_map>
 #include "../baysis/probsupport.hpp"
-//#include "../baysis/filterschemes.cpp"
-//#include "../baysis/ifactories.hpp"
+#include "../baysis/filterschemes.cpp"
+#include "../baysis/utilities.hpp"
 #include "../baysis/samplingschemes.hpp"
 #include "../baysis/algorithms.hpp"
 #include "../baysis/models.cpp"
-//#include "../baysis/h5bridge.cpp"
+#include "../baysis/h5bridge.cpp"
 //#include "../baysis/accumulator.hpp"
 #include "../baysis/dataprovider.hpp"
 #include "../baysis/paramgenerators.hpp"
@@ -161,7 +162,9 @@ int main(int argc, const char * argv[]) {
 //    file.getDataSet(std::string(MODEL_SPEC_KEY)+"/"+std::string(TRANSITIONM_KEY)+"/mu_prior").read(mu);
 //    std:cout << mu << std::endl;
 */
-
+    int s;
+    typedef zip3<SingleStateScheme, EmbedHmmSchemeND>::withcrossprod<ParTrm_tlist, ParObsm_tlist, std::mt19937>::list List;
+    std::cout << abi::__cxa_demangle(typeid(List).name(), 0, 0, &s) << std::endl;
 
     //! Some toy models for testing
    // Set up the model
@@ -351,7 +354,7 @@ int main(int argc, const char * argv[]) {
 
     std::cout << "log density of driver for A = " << A.logDensity(checkA) << std::endl;
     std::cout << "log density of driver for C = " << C.logDensity(checkC) << std::endl;
-*/
+*//*
     auto trm_params = std::make_tuple(parA, parQ);
     auto partrm = std::make_shared<ParametrizedModel<LGTransitionStationary,
                                                 DiagonalMatrixParam<NormalDist>,
@@ -387,7 +390,7 @@ int main(int argc, const char * argv[]) {
         std::cout << acc.first << ": " << acc.second << std::endl;
     }
     std::cout << "\nDuration: " << pehmm.getStatistics().totalDuration() << "ms" << std::endl;
-
+*/
 /*
     // testing Map<> object of Eigen
     int data[] = {1,2,3,4,5,6,7,8,9};

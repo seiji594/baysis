@@ -39,23 +39,31 @@ namespace ssmodels {
         setInputM(A);
         setControlM(B);
         Q = Cov;
-//        if (!NumericalRcond::isSymmetric(Q)) {
-//            throw LogicException("Transition model. Covariance matrix not symmetric");
-//        }
+        if (!NumericalRcond::isSymmetric(Q)) {
+            throw LogicException("Transition model. Covariance matrix not symmetric");
+        }
         LQ.compute(Q);
-//        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix not PD");
+        rclimit.checkPD(LQ.rcond(), "Transition model. Covariance matrix not PD");
         Q_inv = Q.inverse();
     }
 
     void LGTransitionStationary::setPrior(const Vector &mu, const Matrix &sigma) {
         Q_prior = sigma;
-//        if (!NumericalRcond::isSymmetric(Q_prior)) {
-//            throw LogicException("Transition model. Initial covariance matrix not symmetric");
-//        }
+        if (!NumericalRcond::isSymmetric(Q_prior)) {
+            throw LogicException("Transition model. Initial covariance matrix not symmetric");
+        }
         LQprior.compute(Q_prior);
-//        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix not PD");
+        rclimit.checkPD(LQprior.rcond(), "Transition model. Covariance matrix not PD");
         Q_prior_inv = Q_prior.inverse();
         mu_prior = mu;
+    }
+
+    void LGTransitionStationary::test(const Matrix& A, const Matrix &Cov) {
+        setInputM(A);
+        LQ.compute(Cov);
+        AutoregressiveStationaryCov prior_cov;
+        prior_cov.update(A, Cov);
+        LQprior.compute(prior_cov.param);
     }
 
 
@@ -78,6 +86,11 @@ namespace ssmodels {
         R_inv = R.inverse();
     }
 
+    void LGObservationStationary::test(const Matrix &C, const Matrix &Cov) {
+        setInputM(C);
+        LR.compute(Cov);
+    }
+
 
     LPObservationStationary::LPObservationStationary(std::size_t seq_length,
                                                      std::size_t state_size,
@@ -92,6 +105,10 @@ namespace ssmodels {
         setControls(ctrls);
     }
 
+    void LPObservationStationary::test(const Matrix &C, const Matrix &D, const Vector &ctrls) {
+        init(C, D, ctrls);
+    }
+
 
     GPObservationStationary::GPObservationStationary(std::size_t seq_length, std::size_t m_size, MF mf)
             : ObservationModel(m_size, m_size, seq_length),
@@ -99,6 +116,10 @@ namespace ssmodels {
 
     void GPObservationStationary::init(const Vector &mc) {
         coefficients = mc;
+    }
+
+    void GPObservationStationary::test(const Vector &mc) {
+        init(mc);
     }
 
 }

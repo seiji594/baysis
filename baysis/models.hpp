@@ -14,11 +14,12 @@
 #include "matsupport.hpp"
 #include "probsupport.hpp"
 #include "paramgenerators.hpp"
-#include "ifactories.hpp"
+#include "utilities.hpp"
 
 
 using Eigen::Ref;
 
+enum class ModelType { lingauss=1, linpoiss, genpoiss, size=3 };
 
 namespace ssmodels
 {
@@ -84,10 +85,13 @@ namespace ssmodels
     public:
         typedef double Value_type;
 
+        static std::size_t Id() { return static_cast<std::size_t>(ModelType::lingauss); }
+
         LGTransitionStationary(std::size_t seq_length, std::size_t state_size, std::size_t control_size = 0);
 
         void init(const Matrix& A, const Matrix & Cov, const Matrix& B=Matrix());
         void setPrior(const Vector& mu, const Matrix& sigma);
+        void test(const Matrix &A, const Matrix &Cov);
 
         template<typename DerivedA, typename DerivedB>
         double logDensity(const Eigen::DenseBase<DerivedA> &curx, const Eigen::DenseBase<DerivedB> &prevx) const;
@@ -97,7 +101,6 @@ namespace ssmodels
 
         template<typename RNG>
         Vector simulate(const Vector &prev_state, std::shared_ptr<RNG> &rng, bool prior=false) const;
-
         template<class Derived>
         Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
             apply(x);
@@ -124,11 +127,9 @@ namespace ssmodels
         const Eigen::LLT<Matrix> & getL() const {
             return LQ;
         }
-
         const Eigen::LLT<Matrix> & getLprior() const {
             return LQprior;
         }
-
     private:
         Matrix Q;       // State Gaussian noise covariance
         Matrix Q_inv;
@@ -147,17 +148,19 @@ namespace ssmodels
     public:
         typedef double Value_type;
 
+        static std::size_t Id() { return static_cast<std::size_t>(ModelType::lingauss); }
+
         LGObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size,
                                 std::size_t control_size=0);
 
         void init(const Matrix& C, const Matrix& Cov, const Matrix& D=Matrix());
+        void test(const Matrix& C, const Matrix& Cov);
 
         template<typename DerivedA, typename DerivedB>
         double logDensity(const Eigen::DenseBase<DerivedA> &y, const Eigen::DenseBase<DerivedB> &x) const;
 
         template<typename RNG>
         Vector simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
-
         template<class Derived>
         Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
             apply(x);
@@ -172,10 +175,10 @@ namespace ssmodels
         const Matrix& getC() const {
             return inputM;
         }
+
         const Eigen::LLT<Matrix>& getL() {
             return LR;
         }
-
     private:
         Matrix R;        // Observation Gaussian noise covariance
         Matrix R_inv;
@@ -191,10 +194,13 @@ namespace ssmodels
         typedef int Value_type;
         typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
 
+        static std::size_t Id() { return static_cast<std::size_t>(ModelType::linpoiss); }
+
         LPObservationStationary(std::size_t seq_length, std::size_t state_size, std::size_t obs_size,
                                 std::size_t control_size=0);
 
         void init(const Matrix &C, const Matrix &D = Matrix(), const Vector &ctrls = Vector());
+        void test(const Matrix &C, const Matrix &D = Matrix(), const Vector &ctrls = Vector());
 
         template<class Derived>
         Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
@@ -218,9 +224,12 @@ namespace ssmodels
         typedef Eigen::Matrix<Value_type, Eigen::Dynamic, 1> Sample_type;
         using MF = Vector (*)(const Ref<const Vector>&, const Ref<const Vector>&);
 
+        static std::size_t Id() { return static_cast<std::size_t>(ModelType::genpoiss); }
+
         GPObservationStationary(std::size_t seq_length, std::size_t m_size, MF mf);
 
         void init(const Vector& mc);
+        void test(const Vector& mc);
 
         template<class Derived>
         Vector& getMean(const Eigen::DenseBase<Derived> &x) const {
@@ -233,7 +242,6 @@ namespace ssmodels
 
         template<typename RNG>
         Sample_type simulate(const Vector &cur_state, std::shared_ptr<RNG>& rng) const;
-
     private:
         MF mean_function;
         mutable Vector mean;
@@ -249,15 +257,18 @@ namespace ssmodels
     template<typename BaseModel, typename... Params>
     class ParametrizedModel: public BaseModel {
     public:
-        typedef std::tuple<Params...> Model_params;
+        typedef std::tuple<std::shared_ptr<Params>...> Model_params;
+        typedef std::tuple<Params...> Model_params_nonptr;
         static constexpr auto nParams = sizeof...(Params);
+
+        static std::size_t Id();
 
         template<typename... Args>
         explicit ParametrizedModel(Model_params parms, Args&&... args);
 
         template<typename RNG>
         Vector reset(const std::shared_ptr<RNG>& rng);
-        void update(const Vector& new_drivers);
+        void update(const Vector& new_drivers, bool final=true);
         double priorLogdensity(const Vector& new_drivers) const;
 
         const Eigen::LLT<Matrix>& getParamsL() const { return covL; }
@@ -265,6 +276,8 @@ namespace ssmodels
     private:
         template<std::size_t... Is>
         void update_impl(std::index_sequence<Is...>);
+        template<std::size_t... Is>
+        void test_impl(std::index_sequence<Is...>);
 
         Model_params params;
         Eigen::LLT<Matrix> covL;
@@ -371,10 +384,10 @@ namespace ssmodels
     template<typename... Args>
     ParametrizedModel<BaseModel, Params...>::ParametrizedModel(ParametrizedModel::Model_params parms, Args &&... args)
             : BaseModel(std::forward<Args&&>(args)...),
-              params(std::move(parms)) {
+              params(parms) {
         Matrix cov = Matrix::Zero(nParams, nParams);
         static_for(params, [&](auto I, auto& p){
-            cov(I, I) = p.variance();
+            cov(I, I) = p->variance();
         });
         covL.template compute(cov);
     }
@@ -384,7 +397,7 @@ namespace ssmodels
     Vector ParametrizedModel<BaseModel, Params...>::reset(const std::shared_ptr<RNG>& rng) {
         Vector retval(nParams);
         static_for(params, [&](auto I, auto& p){
-            retval(I) = p.initDraw(rng);
+            retval(I) = p->initDraw(rng);
         });
         return retval;
     }
@@ -393,43 +406,54 @@ namespace ssmodels
     double ParametrizedModel<BaseModel, Params...>::priorLogdensity(const Vector &new_drivers) const {
         double ld{0};
         static_for(params, [&](auto I, auto& p) {
-            ld += p.logDensity(new_drivers(I));
+            ld += p->logDensity(new_drivers(I));
         });
         return ld;
     }
 
     template<typename Base, typename... Params>
-    void ParametrizedModel<Base, Params...>::update(const Vector &new_drivers) {
+    void ParametrizedModel<Base, Params...>::update(const Vector &new_drivers, bool final) {
         if (new_drivers.size() != nParams) {
-            std::cerr << "Number of parameter drivers must be equal to number of parameters. Nothing updated." << std::endl;
+            std::cerr << "Number of parameter drivers must be equal to number of models's parameters. "
+                         "Nothing updated." << std::endl;
             return;
         }
-
         static_for(params, [&](auto I, auto& p) {
-            p.update(new_drivers(I));
+            p->update(new_drivers(I), false);
         });
-//        apply_updates<std::make_index_sequence<nParams> >(new_drivers);
-        update_impl(std::index_sequence_for<Params...>());
+        if (final) {
+            update_impl(std::index_sequence_for<Params...>());
+        } else {
+            test_impl(std::index_sequence_for<Params...>());
+        }
     }
-
-//    template<typename BaseModel, typename... Params>
-//    template<std::size_t Idx, std::size_t... Ids>
-//    void ParametrizedModel<BaseModel, Params...>::apply_updates(const std::vector<double> &drivers) {
-//        std::get<Idx>(params).update(drivers[Idx]);
-//        apply_updates<std::index_sequence<Ids>...>(drivers);
-//    }
 
     template<typename Base, typename... Params>
     template<std::size_t... Is>
     void ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
-        // FIXME: only update those parts of the model that are necessary for logDensity calculations
-        Base::init(std::get<Is>(params).param...);
+        Base::init(std::get<Is>(params)->param...);
         if (typeid(Base) == typeid(LGTransitionStationary)) {
             AutoregressiveStationaryCov prior_cov;
-            prior_cov.template update(std::get<0>(params), std::get<1>(params));
+            prior_cov.update(std::get<0>(params)->param, std::get<1>(params)->param);
             reinterpret_cast<LGTransitionStationary*>(this)->
                     setPrior(reinterpret_cast<LGTransitionStationary*>(this)->getPriorMean(), prior_cov.param);
         }
+    }
+
+    template<typename Base, typename... Params>
+    template<std::size_t... Is>
+    void ParametrizedModel<Base, Params...>::test_impl(std::index_sequence<Is...>) {
+        Base::test(std::get<Is>(params)->param...);
+    }
+
+    template<typename BaseModel, typename... Params>
+    std::size_t ParametrizedModel<BaseModel, Params...>::Id() {
+        std::size_t retval;
+        using Param_tlist = typelist::convert<Model_params_nonptr, typelist::tlist>;
+        static_for(Model_params(), [&](auto I, auto& p) {
+            retval += Int_Pow(10, 2*I+1) * typelist::tlist_type_at<I, Param_tlist>::type::Id();
+        });
+        return BaseModel::Id() + retval;
     }
 
 

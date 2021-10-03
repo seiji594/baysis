@@ -86,14 +86,19 @@ private:
     Dist dist;
 };
 
+
+enum class DistType { normal=1, uniform, invgamma, poisson };
+
 /**
- * Univariate/multivarite NormalDist distribution
+ * Univariate/multivariate NormalDist distribution
  */
 class NormalDist {
 public:
     typedef std::normal_distribution<> Dist_type;
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     static constexpr int Nparams = 2;
+
+    static std::size_t Id() { return static_cast<std::size_t>(DistType::normal); }
 
     static inline double variance(const double mu, const double sigma) {
         return sigma * sigma;
@@ -172,6 +177,8 @@ public:
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     static constexpr int Nparams = 1;
 
+    static std::size_t Id() { return static_cast<std::size_t>(DistType::poisson); }
+
     static inline double variance(const double lambda) {
         return lambda;
     }
@@ -240,6 +247,60 @@ public:
     }
 };
 
-// TODO: add InverseGamma (make out of std::gamma dist) and Uniform distributions
+
+namespace std {
+    template<class RealType=double>
+    class inverse_gamma_distribution: gamma_distribution<RealType> {
+    public:
+        typedef typename gamma_distribution<RealType>::result_type result_type;
+        typedef typename gamma_distribution<RealType>::param_type param_type;
+
+        template<class Generator>
+        result_type operator()(Generator& g) {
+            return 1 / gamma_distribution<RealType>::operator()(g);
+        }
+
+        template<class Generator>
+        result_type operator()(Generator& g, const param_type& params) {
+            return 1 / gamma_distribution<RealType>::operator()(g, params);
+        }
+    };
+}
+
+
+class InvGammaDist {
+public:
+    typedef std::inverse_gamma_distribution<double> Dist_type;
+    typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
+    static constexpr int Nparams = 2;
+
+    static std::size_t Id() { return static_cast<std::size_t>(DistType::invgamma); }
+
+    static inline double variance(const double alpha, const double beta) {
+        return beta * beta / (pow(alpha-1, 2) * (alpha - 2));
+    }
+
+    static inline double logDensity(const double x, const double alpha, const double beta) {
+        return -(alpha + 1) * log(x) - beta / x;
+    }
+};
+
+
+class UniformDist {
+public:
+    typedef std::uniform_real_distribution<double> Dist_type;
+    typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
+    static constexpr int Nparams = 2;
+
+    static std::size_t Id() { return static_cast<std::size_t>(DistType::uniform); }
+
+    static inline double variance(const double a, const double b) {
+        return pow(b - a, 2) / 12;
+    }
+
+    static inline double logDensity(const double x, const double a, const double b) {
+        return 0.;
+    }
+};
 
 #endif //BAYSIS_PROBSUPPORT_HPP

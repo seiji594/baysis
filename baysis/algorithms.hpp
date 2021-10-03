@@ -47,6 +47,8 @@ namespace algos {
     template<typename Filter, typename Smoother>
     class KalmanSmoother: public ISmoother {
     public:
+        static std::size_t Id() { return Filter::Id()*FILTER_ID_MULT + Smoother::Id(); }
+
         KalmanSmoother(const std::shared_ptr<LGTransitionStationary> &tr_model,
                        const std::shared_ptr<LGObservationStationary> &obs_model);
 
@@ -54,7 +56,6 @@ namespace algos {
         void run() override;
         const Matrix& getMeans() const override { return smoothed_means; }
         const Matrix& getCovariances() const override { return smoothed_covs; }
-        static std::size_t Id() { return Filter::Id()*FILTER_ID_MULT + Smoother::Id(); }
 
         Matrix smoothed_means;
         Matrix post_means;
@@ -77,6 +78,8 @@ namespace algos {
     public:
         typedef Scheme Scheme_type;
         typedef typename Scheme::Data_type Data_type;
+
+        static std::size_t Id() { return Scheme::Id(); }
 
         MCMC(const std::shared_ptr<TransitionModel> &tr_model, const std::shared_ptr<ObservationModel> &obs_model,
              const std::shared_ptr<Scheme> &sampling_scheme, int N,
@@ -204,8 +207,8 @@ namespace algos {
     template<typename Scheme>
     void MCMC<Scheme>::reset(const Matrix& x_init, u_long seed) {
         sampler->reset(seed);
-        sampler->init(*transitionM, *observationM);
         sampler->cur_sample = x_init;
+        sampler->init(*transitionM, *observationM);
         accumulator.reset();
     }
 

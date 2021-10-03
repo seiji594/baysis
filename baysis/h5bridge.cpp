@@ -11,19 +11,26 @@
 
 
 MCMCsession::MCMCsession(const File &specs) {
-    std::size_t obsmid, sid;
+    std::size_t trmid, obsmid, sid;
+    bool is_parametrised{false};
     Group simspecs = specs.getGroup(SIMULATION_SPEC_KEY);
     Group modelspecs = specs.getGroup(MODEL_SPEC_KEY);
     Group samplerspecs = specs.getGroup(SAMPLER_SPEC_KEY);
     simspecs.getDataSet("init").read(xinit);
     simspecs.getDataSet("seeds").read(seeds);
+    modelspecs.getGroup(TRANSITIONM_KEY).getAttribute("mtype").read(trmid);
     modelspecs.getGroup(OBSERVATIONM_KEY).getAttribute("mtype").read(obsmid);
     samplerspecs.getAttribute("stype").read(sid);
 
+    if (specs.hasAttribute("parametrised"))
+        specs.getAttribute("parametrised").read(is_parametrised);
     ObjectFactory<IMcmc, std::function<std::shared_ptr<IMcmc>(const Group&, const Group&, const Group&)> > factory{};
-    factory.subscribe<MCMC, typelist::tlist_reverse<Sampler_tlist>::type, McmcMaker>();
-    std::size_t mcmcid = (sid - 1) * static_cast<std::size_t>(ModelType::size) + obsmid;
-    mcmc = factory.create(mcmcid, modelspecs, samplerspecs, simspecs);
+    if (is_parametrised) {
+        factory.subscribe<MCMC, Sampler_tlist, McmcMaker>();
+    } else {
+        factory.subscribe<MCMC, ParSampler_tlist, ParmMcmcMaker>();
+    }
+    mcmc = factory.create(sid, modelspecs, samplerspecs, simspecs);
     create_id(specs.getName());
 }
 
