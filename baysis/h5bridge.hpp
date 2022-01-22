@@ -15,6 +15,10 @@
  *  they are too involved for this project
  *  - talk about difficulties in generalising the code, especially for models: difficult to create unified interface;
  *  mention attempt in Bayes++ but it is narrow in class of attainable models
+ *  - reflect on the fact that if parametrised then everything parametrised but could be done that parametrisation
+ *  can be chosen for certain params but not others
+ *  - propose other ideas to do it: bindings vis pybind or Cython, aso specs could be dumped into JSON or yaml
+ *  and read from C++ with immediate instantiation (check if theoretically possible)
  */
 
 #ifndef BAYSIS_H5BRIDGE_HPP
@@ -26,9 +30,9 @@
 #include <highfive/H5Group.hpp>
 #include "algorithms.hpp"
 #include "filterschemes.hpp"
-#include "samplingschemes.hpp"
+//#include "samplingschemes.hpp"
 #include "dataprovider.hpp"
-#include "utilities.hpp"
+//#include "utilities.hpp"
 
 using namespace algos;
 using namespace schemes;
@@ -264,23 +268,6 @@ std::shared_ptr<IParam> ParamMaker::create(const std::vector<double>& settings, 
     }
     retval->setPrior(std::vector<double>(it, settings.end()));
     return retval;
-}
-
-std::shared_ptr<IParam> ParamMaker::createConst(const Group &spec) {
-    std::size_t ydim;
-    std::vector<double> const_spec;
-    spec.getAttribute("ydim").read(ydim);
-    spec.getDataSet("constant").read(const_spec);
-    auto pt = static_cast<ParamType>(static_cast<int>(const_spec.front()));
-
-    switch (pt) {
-        case ParamType::constm:
-            return std::make_shared<ConstMatrix>(ydim, const_spec.back());
-        case ParamType::constv:
-            return std::make_shared<ConstVector>(ydim, const_spec.back());
-        default:
-            throw LogicException("Constant parameter can only be a const matrix or a const vector");
-    }
 }
 
 

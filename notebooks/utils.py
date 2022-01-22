@@ -9,6 +9,7 @@
 import h5py
 import subprocess as sp
 import numpy as np
+from abc import abstractmethod, ABC
 from enum import Enum, IntEnum, unique
 from pathlib import Path
 
@@ -48,6 +49,17 @@ class ModelType(IntEnum):
 
 
 @unique
+class DistributionType(IntEnum):
+    NORMAL = 1
+    UNIFORM = 2
+    INVGAMMA = 3
+
+    @property
+    def nparams(self):
+        return 2
+
+
+@unique
 class SamplerType(IntEnum):
     METROPOLIS = 1
     EHMM = 2
@@ -71,6 +83,15 @@ class SmootherType(IntEnum):
     TWOFILTER = 2
 
 
+@unique
+class ParamType(IntEnum):
+    DIAGONAL_MATRIX = 1
+    SYMMETRIC_MATRIX = 2
+    VECTOR = 3
+    CONST_MATRIX = 4
+    CONST_VECTOR = 5
+
+
 class Specification:
     def __init__(self, specname: Enum, **kwargs):
         self._groupname_ = specname.value
@@ -80,7 +101,7 @@ class Specification:
     def add2spec(self, spec):
         grp = spec.create_group(self._groupname_)
         for attr, value in vars(self).items():
-            if attr[0] != "_":
+            if attr is not None and attr[0] != "_":
                 if isinstance(value, (list, np.ndarray)):
                     grp.create_dataset(attr, data=value)
                 elif isinstance(value, IntEnum):
@@ -89,22 +110,95 @@ class Specification:
                     grp.attrs.create(attr, value, dtype=h5py.string_dtype() if isinstance(value, str) else type(value))
 
 
+class ModelParameter:
+    def __init__(self, ptype: ParamType):
+        self._type_ = ptype.value
+        self.parametrized = False
+        self.dim = None
+        self._value_ = None
+
+    def parametrize(self, dim: int, distribution: DistributionType, prior: tuple, minx=None, maxx=None, *args):
+        self.parametrized = True
+        self.dim = dim
+        param_id = self._type_ + distribution.value * 10
+        self._value_ = [param_id, 0 if minx is None else minx, 0 if maxx is None else maxx] + list(prior) + list(args)
+
+    @abstractmethod
+    @property
+    def value(self):
+        if self.parametrized:
+            return np.array(self._value_)
+        else:
+            return self._value_
+
+    @value.setter
+    def value(self, val):
+        if self.parametrized:
+            raise ValueError("Can't set value as the matrix/vector is parametrised.")
+        self._value_ = val
+
+
+class SymmetricMatrixParam(ModelParameter):
+    def __init__(self):
+        super().__init__(ParamType.SYMMETRIC_MATRIX)
+
+    @property
+    def value(self):
+        return super().value()
+
+
+class DiagonalMatrixParam(ModelParameter):
+    def __init__(self):
+        super().__init__(ParamType.DIAGONAL_MATRIX)
+
+    @property
+    def value(self):
+        return super().value()
+
+
+class VectorParam(ModelParameter):
+    def __init__(self):
+        super().__init__(ParamType.VECTOR)
+
+    @property
+    def value(self):
+        if self.parametrized:
+            return np.array(self._value_)
+        else:
+            return self._value_.reshape(-1, 1)
+
+
+class ConstParam(ModelParameter):
+    def __init__(self, ptype: ParamType):
+        super().__init__(ptype)
+
+    @property
+    def value(self):
+        if not self.parametrized and self._type_ == ParamType.CONST_VECTOR:
+            return self._value_.reshape(-1, 1)
+        else:
+            return super().value()
+
+
 class TransitionSpec(Specification):
-    def __init__(self, mean_coeff: np.ndarray, cov: np.ndarray, prior_mean: np.ndarray, prior_cov: np.ndarray):
-        super().__init__(SpecGroup.TRANSITION_MODEL, A=mean_coeff, Q=cov,
+    def __init__(self, mean_coeff: ModelParameter, cov: ModelParameter, prior_mean: np.ndarray, prior_cov: np.ndarray):
+        super().__init__(SpecGroup.TRANSITION_MODEL, A=mean_coeff.value, Q=cov.value, xdim=mean_coeff.dim,
                          mu_prior=prior_mean.reshape(-1, 1), S_prior=prior_cov)
+        self.parametrised = mean_coeff.parametrized | cov.parametrized
 
 
 class ObservationSpec(Specification):
-    def __init__(self, model_type: ModelType, mean_coeff: np.ndarray, *args):
+    def __init__(self, model_type: ModelType, mean_coeff: ModelParameter, *params: ModelParameter):
         if model_type == ModelType.LINEAR_GAUSS:
-            super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=model_type, C=mean_coeff, R=args[0])
+            super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=model_type,
+                             C=mean_coeff.value, R=params[0].value, ydim=mean_coeff.dim)
         elif model_type == ModelType.LINEAR_POISSON:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=model_type,
-                             C=mean_coeff, D=args[0], controls=args[1].reshape(-1, 1))
+                             C=mean_coeff.value, D=params[0].value, controls=params[1].value, ydim=mean_coeff.dim)
         elif model_type == ModelType.BIMODAL_POISSON:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=model_type,
-                             C=mean_coeff.reshape(-1, 1), mean_function=model_type.mean_function())
+                             C=mean_coeff.value, mean_function=model_type.mean_function(), ydim=mean_coeff.dim)
+        self.parametrised = any([mean_coeff]+list(params))
 
 
 class SamplerSpec(Specification):
@@ -158,6 +252,8 @@ class MCMCsession:
     def init(self, sequence_length: int, transition_model: TransitionSpec, observation_model: ObservationSpec,
              sampler: SamplerSpec, simulation_specs: SimulationSpec, data: Data, smoother: SmootherSpec = None):
         with h5py.File(DATA_PATH / self._spec_file_, 'w') as f:
+            if transition_model.parametrised and observation_model.parametrised:
+                f.attrs.create("parametrised", True, dtype=bool)
             model = f.create_group("model")
             model.attrs.create("length", sequence_length, dtype=int)
             transition_model.add2spec(model)
@@ -253,4 +349,3 @@ class SmootherResults:
             print(fe)
         except ValueError as e:
             print(e)
-

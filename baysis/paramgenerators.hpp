@@ -245,7 +245,7 @@ double VectorParam<PriorDist>::variance() const {
 }
 
 
-void AutoregressiveStationaryCov::update(const Matrix& diag, const Matrix& symm) {
+inline void AutoregressiveStationaryCov::update(const Matrix& diag, const Matrix& symm) {
     double phi = diag(0,0);
     phi = 1 - phi*phi;
     param = symm / phi;

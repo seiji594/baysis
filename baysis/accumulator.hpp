@@ -53,11 +53,6 @@ private:
 };
 
 
-SampleAccumulator::SampleAccumulator(std::size_t nrows, std::size_t ncols, std::size_t nsamples)
-                                    : samples(nsamples, Sample_type::Zero(nrows, ncols)),
-                                    par_samples(nsamples),
-                                    accepts() { }
-
 template<template<class,class,class> class Scheme, typename M1, typename M2, typename Rng>
 void SampleAccumulator::addSample(const Scheme<M1, M2, Rng>& sampler, std::size_t iter) {
     samples.at(iter) = sampler.cur_sample;
@@ -90,65 +85,6 @@ void SampleAccumulator::setAcceptances(const schemes::WithParameterUpdate<Scheme
     par_accepts.template emplace("obsm_par_acceptances", sampler.obsm_par_acceptances);
 }
 
-void SampleAccumulator::setDuration(Timedelta dur) {
-    duration = dur;
-}
-
-void SampleAccumulator::resize(std::size_t new_sz) {
-    std::size_t ncols = samples.front().cols();
-    std::size_t nrows = samples.front().rows();
-    samples = std::vector<Sample_type>(new_sz, Sample_type::Zero(nrows, ncols));
-    par_samples = std::vector<Vector>(new_sz);
-}
-
-void SampleAccumulator::reset() {
-    accepts.clear();
-}
-
-Vector SampleAccumulator::getSmoothedMeans(std::size_t t) const {
-    Vector retval = Vector::Zero(samples.front().rows());
-
-    for (int i = offset; i < samples.size(); ++i) {
-        retval += samples[i].col(t);
-    }
-
-    return retval / (samples.size() - offset);
-}
-
-Matrix SampleAccumulator::getSmoothedCov(const Vector& means, std::size_t t) const {
-    std::size_t nrows = samples.front().rows();
-    Matrix retval(nrows, samples.size()-offset);
-
-    for (int i = offset; i < samples.size(); ++i) {
-        retval.col(i-offset) = samples[i].col(t) - means;
-    }
-
-    return retval * retval.transpose() / (samples.size() - offset);
-}
-
-const std::vector<SampleAccumulator::Sample_type>& SampleAccumulator::getSamples() const {
-    return samples;
-}
-
-const std::vector<Vector> &SampleAccumulator::getParametersSamples() const {
-    return par_samples;
-}
-
-const std::vector<int> &SampleAccumulator::getAcceptances() const {
-    return accepts;
-}
-
-std::unordered_map<std::string, int> SampleAccumulator::getParametersAcceptances() const {
-    return par_accepts;
-}
-
-SampleAccumulator::Timedelta SampleAccumulator::totalDuration() const {
-    return duration;
-}
-
-void SampleAccumulator::setBurnin(double cutoff) {
-    offset = static_cast<int>(samples.size()*cutoff);
-}
 /*
 herr_t SampleAccumulator::write_matrix(const Matrix &mat, const H5::DataSpace &data_space,
                                         H5::DataSet &data_set, std::size_t pos) const {

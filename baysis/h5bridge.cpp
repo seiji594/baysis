@@ -26,9 +26,9 @@ MCMCsession::MCMCsession(const File &specs) {
         specs.getAttribute("parametrised").read(is_parametrised);
     ObjectFactory<IMcmc, std::function<std::shared_ptr<IMcmc>(const Group&, const Group&, const Group&)> > factory{};
     if (is_parametrised) {
-        factory.subscribe<MCMC, Sampler_tlist, McmcMaker>();
-    } else {
         factory.subscribe<MCMC, ParSampler_tlist, ParmMcmcMaker>();
+    } else {
+        factory.subscribe<MCMC, Sampler_tlist, McmcMaker>();
     }
     mcmc = factory.create(sid, modelspecs, samplerspecs, simspecs);
     create_id(specs.getName());
@@ -122,6 +122,25 @@ template<> GPOS::Model_ptr GPOS::create(const Group& modelspecs, std::size_t len
     obsm->init(C);
     return obsm;
 }
+
+
+std::shared_ptr<IParam> ParamMaker::createConst(const Group &spec) {
+    std::size_t ydim;
+    std::vector<double> const_spec;
+    spec.getAttribute("ydim").read(ydim);
+    spec.getDataSet("constant").read(const_spec);
+    auto pt = static_cast<ParamType>(static_cast<int>(const_spec.front()));
+
+    switch (pt) {
+        case ParamType::constm:
+            return std::make_shared<ConstMatrix>(ydim, const_spec.back());
+        case ParamType::constv:
+            return std::make_shared<ConstVector>(ydim, const_spec.back());
+        default:
+            throw LogicException("Constant parameter can only be a const matrix or a const vector");
+    }
+}
+
 
 void DataInitialiser::initialise(const File &specs, const MCMCsession &session) {
     Group data = specs.getGroup(DATA_KEY);

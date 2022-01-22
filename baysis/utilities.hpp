@@ -1,5 +1,5 @@
 //
-// ifactories.hpp
+// utilities.hpp
 // Baysis
 //
 // Created by Vladimir Sotskov on 22/08/2021, 22:31.
@@ -376,7 +376,7 @@ constexpr auto static_for(std::tuple<T...>& t, F&& f) {
 
 
 // Integer power
-std::size_t Int_Pow(unsigned long x, long p)
+static std::size_t Int_Pow(unsigned long x, long p)
 {
     if (p == 0) return 1;
     if (p == 1) return x;
