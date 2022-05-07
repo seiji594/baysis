@@ -19,6 +19,7 @@
 
 #include <iostream>
 #include <exception>
+#include <cxxabi.h>
 #include <Eigen/Dense>
 
 
@@ -62,6 +63,25 @@ template<typename PT>
 void Check_Result(const PT& res, const char* msg) {
 #ifndef NDEBUG
     std::cout << msg << std::endl << res << std::endl;
+#endif
+}
+
+template<typename PT>
+void log(const PT& cls, const char* msg) {
+#ifndef NDEBUG
+    int s;
+    std::cout << msg << std::endl;
+    std::cout << abi::__cxa_demangle(typeid(PT).name(), 0, 0, &s) << std::endl;
+#endif
+}
+
+template<typename T>
+void Print_Map(const typename T::Creator_map& m) {
+#ifndef NDEBUG
+    int s;
+    for (const auto& n : m) {
+        std::cout << n.first << " = " << abi::__cxa_demangle(typeid(n.second).name(), 0, 0, &s) << "\n";
+    }
 #endif
 }
 

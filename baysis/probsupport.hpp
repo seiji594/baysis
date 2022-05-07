@@ -248,40 +248,73 @@ public:
 };
 
 
-namespace std {
-    template<class RealType=double>
-    class inverse_gamma_distribution: gamma_distribution<RealType> {
-    public:
-        typedef typename gamma_distribution<RealType>::result_type result_type;
-        typedef typename gamma_distribution<RealType>::param_type param_type;
+/**
+ * Support for the Inverse Gamma distribution class for parametrized models
+ * @tparam RealType - type of the variates, default `double`
+ */
+template<class RealType=double>
+class inverse_gamma_distribution: std::gamma_distribution<RealType> {
+public:
+    typedef typename std::gamma_distribution<RealType>::result_type result_type;
+    typedef typename std::gamma_distribution<RealType>::param_type param_type;
 
-        template<class Generator>
-        result_type operator()(Generator& g) {
-            return 1 / gamma_distribution<RealType>::operator()(g);
-        }
+    explicit inverse_gamma_distribution(const param_type& params): std::gamma_distribution<RealType>(params) {}
+    explicit inverse_gamma_distribution(RealType alpha, RealType beta = 1.0): std::gamma_distribution<RealType>(alpha, beta) {}
+    inverse_gamma_distribution(): inverse_gamma_distribution(1.0) {}
 
-        template<class Generator>
-        result_type operator()(Generator& g, const param_type& params) {
-            return 1 / gamma_distribution<RealType>::operator()(g, params);
-        }
-    };
-}
+    template<class Generator>
+    result_type operator()(Generator& g) {
+        return 1 / std::gamma_distribution<RealType>::operator()(g);
+    }
+
+    template<class Generator>
+    result_type operator()(Generator& g, const param_type& params) {
+        return 1 / std::gamma_distribution<RealType>::operator()(g, params);
+    }
+
+    param_type param() const {
+        return std::gamma_distribution<RealType>::param();
+    }
+
+    void param(const param_type& params) {
+        std::gamma_distribution<RealType>::param(params);
+    }
+};
 
 
+/**
+ * A univariate Inverse Gamma distribution.
+ */
 class InvGammaDist {
 public:
-    typedef std::inverse_gamma_distribution<double> Dist_type;
+    typedef inverse_gamma_distribution<double> Dist_type;
     typedef Eigen::Matrix<Dist_type::result_type, Eigen::Dynamic, 1> Sample_type;
     static constexpr int Nparams = 2;
 
     static std::size_t Id() { return static_cast<std::size_t>(DistType::invgamma); }
 
+    /**
+     * Variance of the distribution given the parameters
+     * @param alpha - shape parameter
+     * @param beta - reciprocal of the scale parameter
+     * @return variance
+     */
     static inline double variance(const double alpha, const double beta) {
-        return beta * beta / (pow(alpha-1, 2) * (alpha - 2));
+        return 1 / (beta * beta * pow(alpha-1, 2) * (alpha - 2));
     }
 
+    /**
+     * Log density of a single variate
+     * @param x
+     * @param alpha
+     * @param beta
+     * @return Natural logarithm of the density for x
+     */
     static inline double logDensity(const double x, const double alpha, const double beta) {
-        return -(alpha + 1) * log(x) - beta / x;
+        if (alpha <= 2) {
+            return std::numeric_limits<double>::max();
+        }
+        return -(alpha + 1) * log(x) - 1 / (beta * x);
     }
 };
 

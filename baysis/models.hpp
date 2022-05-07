@@ -419,7 +419,7 @@ namespace ssmodels
             return;
         }
         static_for(params, [&](auto I, auto& p) {
-            p->update(new_drivers(I), false);
+            p->update(new_drivers(I));
         });
         if (final) {
             update_impl(std::index_sequence_for<Params...>());
@@ -432,7 +432,7 @@ namespace ssmodels
     template<std::size_t... Is>
     void ParametrizedModel<Base, Params...>::update_impl(std::index_sequence<Is...>) {
         Base::init(std::get<Is>(params)->param...);
-        if (typeid(Base) == typeid(LGTransitionStationary)) {
+        if constexpr (std::is_same<Base, LGTransitionStationary>::value) {
             AutoregressiveStationaryCov prior_cov;
             prior_cov.update(std::get<0>(params)->param, std::get<1>(params)->param);
             reinterpret_cast<LGTransitionStationary*>(this)->
@@ -448,7 +448,7 @@ namespace ssmodels
 
     template<typename BaseModel, typename... Params>
     std::size_t ParametrizedModel<BaseModel, Params...>::Id() {
-        std::size_t retval;
+        std::size_t retval{0};
         using Param_tlist = typelist::convert<Model_params_nonptr, typelist::tlist>;
         static_for(Model_params(), [&](auto I, auto& p) {
             retval += Int_Pow(10, 2*I+1) * typelist::tlist_type_at<I, Param_tlist>::type::Id();

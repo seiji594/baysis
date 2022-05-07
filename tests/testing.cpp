@@ -12,12 +12,12 @@
 //#include <unordered_map>
 #include "../baysis/probsupport.hpp"
 #include "../baysis/filterschemes.cpp"
-#include "../baysis/utilities.hpp"
+//#include "../baysis/utilities.hpp"
 #include "../baysis/samplingschemes.hpp"
 #include "../baysis/algorithms.hpp"
 #include "../baysis/models.cpp"
-#include "../baysis/h5bridge.cpp"
-//#include "../baysis/accumulator.hpp"
+//#include "../baysis/h5bridge.cpp"
+#include "../baysis/accumulator.cpp"
 #include "../baysis/dataprovider.hpp"
 #include "../baysis/paramgenerators.hpp"
 
@@ -161,33 +161,39 @@ int main(int argc, const char * argv[]) {
 //    Vector mu;
 //    file.getDataSet(std::string(MODEL_SPEC_KEY)+"/"+std::string(TRANSITIONM_KEY)+"/mu_prior").read(mu);
 //    std:cout << mu << std::endl;
-*/
+
     int s;
     typedef zip3<SingleStateScheme, EmbedHmmSchemeND>::withcrossprod<ParTrm_tlist, ParObsm_tlist, std::mt19937>::list List;
     std::cout << abi::__cxa_demangle(typeid(List).name(), 0, 0, &s) << std::endl;
-
+*/
     //! Some toy models for testing
    // Set up the model
-    Matrix A(4,4), C(2, 4), Q(4, 4), R(2, 2);
-    double delta = 0.1;
-    A << 1., 0., delta, 0.,
-         0., 1., 0., delta,
-         0., 0., 1., 0.,
-         0., 0., 0., 1.;
-    C << 1., 0., 0., 0.,
-         0., 1., 0., 0.;
-    Q.setConstant(0.5);
-    Q += Matrix::Identity(4, 4) * 0.5;
+   int xdim{10}, T{250};
+   Matrix A(xdim,xdim), C(xdim, xdim), Q(xdim, xdim), R(xdim, xdim);
+//    double delta = 0.1;
+//    A << 1., 0., delta, 0.,
+//         0., 1., 0., delta,
+//         0., 0., 1., 0.,
+//         0., 0., 0., 1.;
+//    C << 1., 0., 0., 0.,
+//         0., 1., 0., 0.;
+    A.setIdentity();
+    A *= 0.9;
+    C.setIdentity();
+    C *= -0.4;
+    Q.setConstant(1);
+    Q += Matrix::Identity(xdim, xdim) * 0.3;
     R.setIdentity();
 
     // Prior for state
     Matrix Sinit;
-    Vector minit(4);
-    minit << 1., 1., 0.5, 2.;
-    Sinit.setIdentity(4, 4);
-    Sinit *= 0.75; //
+    Vector minit(xdim);
+//    minit << 1., 1., 0.5, 2.;
+    minit.setZero();
+//    Sinit.setIdentity(4, 4);
+    Sinit = Q * (1 / (1 - 0.9*0.9));
 
-    std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(10, 4, 0);
+    std::shared_ptr<LGTransitionStationary> trm = std::make_shared<LGTransitionStationary>(T, xdim, 0);
     trm->init(A, Q);
     trm->setPrior(minit, Sinit);
 /*    std::shared_ptr<LGObservationStationary> obsm = std::make_shared<LGObservationStationary>(10, 4, 2);
@@ -248,18 +254,16 @@ int main(int argc, const char * argv[]) {
 */
 
     //! Checking Poisson models
-    size_t xdim = 4, ydim = 4, T=10;
+    int ydim = 10;
     Matrix sigma = Vector::Constant(ydim, 0.6).asDiagonal();
-    Matrix D = Matrix::Identity(ydim, ydim);
-    Vector ctrls = Vector::Constant(ydim, -0.4);
-    Vector x = Vector::Random(xdim);
+    Vector ctrls = Vector::Constant(xdim, 1);
     // Generalised Poisson
 //    auto mf = [](const Ref<const Vector>& state, const Ref<const Vector>& coeff) -> Vector { return state.array().abs() * coeff.array(); };
 //    std::shared_ptr<GPObservationStationary> gpoi = std::make_shared<GPObservationStationary>(T, ydim, mf);
 //    gpoi->_provideData(sigma.diagonal());
     // Linear Poisson
     std::shared_ptr<LPObservationStationary> lpoi = std::make_shared<LPObservationStationary>(T, xdim, ydim, ydim);
-    lpoi->init(sigma, D, ctrls);
+    lpoi->init(sigma, C, ctrls);
 
 //    std::cout << "State:\t" << x.transpose() << std::endl;
 //    std::cout << "Mean:\t" << gpoi.getMean(x).transpose() << std::endl;
@@ -326,20 +330,22 @@ int main(int argc, const char * argv[]) {
        std::cout << "\nDuration: " << ehmm.getStatistics().totalDuration() << "ms" << std::endl;
 */
     DiagonalMatrixParam<NormalDist> parA(xdim);
-    SymmetricMatrixParam<NormalDist> parQ(xdim);
-    VectorParam<NormalDist> parctrl(xdim);
+    SymmetricMatrixParam<InvGammaDist> parQ(xdim);
+    ConstVector parctrl(xdim);
     DiagonalMatrixParam<NormalDist> parC(xdim);
-    ConstMatrix parD(xdim);
+    DiagonalMatrixParam<InvGammaDist> parD(xdim);
 
     std::vector<double> Aprior{0., 0.25};
-    std::vector<double> Qprior{1., 0.5};
+    std::vector<double> Qprior{10., 0.5};
     std::vector<double> Cprior{0.6, 0.7};
-    std::vector<double> ctrl_prior{-0.4, 0.1};
+    std::vector<double> Dprior{10., 0.5};
 
     parA.setPrior(Aprior);
     parQ.setPrior(Qprior);
+    parQ.initDiagonal(0.9);
+
     parC.setPrior(Cprior);
-    parctrl.setPrior(ctrl_prior);
+    parD.setPrior(Dprior);
 /*
     double Adriver = A.initDraw(rng);
     double Cdriver = C.initDraw(rng);
@@ -354,29 +360,32 @@ int main(int argc, const char * argv[]) {
 
     std::cout << "log density of driver for A = " << A.logDensity(checkA) << std::endl;
     std::cout << "log density of driver for C = " << C.logDensity(checkC) << std::endl;
-*//*
-    auto trm_params = std::make_tuple(parA, parQ);
+*/
+    auto trm_params = std::make_tuple(std::shared_ptr<DiagonalMatrixParam<NormalDist>>(&parA),
+                                      std::shared_ptr<SymmetricMatrixParam<InvGammaDist>>(&parQ));
     auto partrm = std::make_shared<ParametrizedModel<LGTransitionStationary,
                                                 DiagonalMatrixParam<NormalDist>,
-                                                SymmetricMatrixParam<NormalDist> > >(trm_params, T, xdim);
+                                                SymmetricMatrixParam<InvGammaDist> > >(trm_params, T, xdim);
     partrm->setPrior(Vector::Zero(xdim), Matrix::Identity(xdim, xdim));
 
-    auto obsm_params = std::make_tuple(parC, parD, parctrl);
+    auto obsm_params = std::make_tuple(std::shared_ptr<DiagonalMatrixParam<NormalDist>>(&parC),
+                                       std::shared_ptr<DiagonalMatrixParam<InvGammaDist>>(&parD),
+                                       std::shared_ptr<ConstVector>(&parctrl));
     auto parobsm = std::make_shared<ParametrizedModel<LPObservationStationary,
                                 DiagonalMatrixParam<NormalDist>,
-                                ConstMatrix, VectorParam<NormalDist> > >(obsm_params, T, xdim, xdim, xdim);
+                                DiagonalMatrixParam<InvGammaDist>, ConstVector> >(obsm_params, T, xdim, xdim, xdim);
 
     using Trm_type = ParametrizedModel<LGTransitionStationary,
                                     DiagonalMatrixParam<NormalDist>,
-                                    SymmetricMatrixParam<NormalDist> >;
+                                    SymmetricMatrixParam<InvGammaDist> >;
     using Obsm_type = ParametrizedModel<LPObservationStationary,
                                         DiagonalMatrixParam<NormalDist>,
-                                        ConstMatrix, VectorParam<NormalDist> >;
+                                        DiagonalMatrixParam<InvGammaDist>, ConstVector>;
     using PSampler_type = SingleStateScheme<Trm_type, Obsm_type, std::mt19937>;
 
     auto psampler(std::make_shared<WithParameterUpdate<PSampler_type> >(50));
-    algos::MCMC<WithParameterUpdate<PSampler_type> > pehmm(partrm, parobsm, psampler, 100, {0.1, 0.3}, 1, false);
-    Matrix init_x(Matrix::Constant(4, 10, 0.));  // Initial sample
+    algos::MCMC<WithParameterUpdate<PSampler_type> > pehmm(partrm, parobsm, psampler, 100, {0.2, 0.8}, 10, false);
+    Matrix init_x(Matrix::Constant(xdim, T, 0.));  // Initial sample
     pehmm.provideData(simulator_poi.getData(), int{});
     pehmm.reset(init_x, 1);
     pehmm.run();
@@ -390,7 +399,7 @@ int main(int argc, const char * argv[]) {
         std::cout << acc.first << ": " << acc.second << std::endl;
     }
     std::cout << "\nDuration: " << pehmm.getStatistics().totalDuration() << "ms" << std::endl;
-*/
+
 /*
     // testing Map<> object of Eigen
     int data[] = {1,2,3,4,5,6,7,8,9};

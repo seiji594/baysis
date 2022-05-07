@@ -170,10 +170,10 @@ struct FactorySubscriber_2a<S, typelist::tlist<TM_H, TM_Ts...>, typelist::tlist<
 
 template <typename ObjectType, typename ObjectCreator=std::function<std::shared_ptr<ObjectType>()> >
 class ObjectFactory {
+public:
     typedef ObjectFactory<ObjectType, ObjectCreator> This_type;
     typedef std::map<std::size_t, ObjectCreator> Creator_map;
 
-public:
     template<typename... Args>
     std::shared_ptr<ObjectType> create(std::size_t id, Args... args) {
         typename Creator_map::const_iterator i = this->creator_map.find(id);
@@ -200,6 +200,10 @@ public:
     template<template<class> class M, typename S, typename Creator>
     bool subscribe() {
         return FactorySubscriber_1<M, S, This_type, Creator>::subscribe(this);
+    }
+
+    void print() {
+        Print_Map<This_type>(creator_map);
     }
 
 private:

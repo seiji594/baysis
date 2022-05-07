@@ -25,7 +25,7 @@ struct IParam {
     virtual double logDensity(double) const = 0;
     virtual void update(double) = 0;
     virtual double variance() const = 0;
-    virtual void initDiagonal(double) { }  // For the symmetric matrices
+    virtual void initDiagonal(double) { }  // For the symmetric matrices only
 
 protected:
     template<typename Dist, typename RNG, std::size_t... Is>
@@ -49,7 +49,7 @@ struct DiagonalMatrixParam: public IParam {
 
     explicit DiagonalMatrixParam(std::size_t shape);
 
-    static std::size_t Id() { return Type + 10 * PriorDist::Id(); }
+    static std::size_t Id() { return Type * 10 + PriorDist::Id(); }
     template<typename RNG>
     double initDraw(std::shared_ptr<RNG> rng);
     double logDensity(double x) const override;
@@ -65,7 +65,7 @@ struct SymmetricMatrixParam: public IParam {
     enum { Type = static_cast<std::size_t>(ParamType::symm) };
     static std::string name() { return "Symmetric matrix"; }
 
-    static std::size_t Id() { return Type + 10 * PriorDist::Id(); }
+    static std::size_t Id() { return Type * 10 + PriorDist::Id(); }
 
     explicit SymmetricMatrixParam(std::size_t shape);
 
@@ -93,7 +93,7 @@ struct VectorParam: public IParam {
     enum { Type = static_cast<std::size_t>(ParamType::vec) };
     static std::string name() { return "Vector"; }
 
-    static std::size_t Id() { return Type + 10 * PriorDist::Id(); }
+    static std::size_t Id() { return Type * 10 + PriorDist::Id(); }
 
     explicit VectorParam(std::size_t shape): param(shape) { }
 
@@ -110,7 +110,7 @@ struct VectorParam: public IParam {
 struct ConstMatrix: IParam {
     enum { Type = static_cast<std::size_t>(ParamType::constm) };
 
-    static std::size_t Id() { return Type; }
+    static std::size_t Id() { return Type * 10; }
 
     ConstMatrix(std::size_t shape, double constant): param(Matrix::Constant(shape, shape, constant)) { }
     explicit ConstMatrix(std::size_t shape): ConstMatrix(shape, 1.) { }
@@ -128,7 +128,7 @@ struct ConstMatrix: IParam {
 struct ConstVector: IParam {
     enum { Type = static_cast<std::size_t>(ParamType::constv) };
 
-    static std::size_t Id() { return Type; }
+    static std::size_t Id() { return Type * 10; }
 
     ConstVector(std::size_t shape, double constant): param(Vector::Constant(shape, constant)) { }
     explicit ConstVector(std::size_t shape): ConstVector(shape, 1.) { }

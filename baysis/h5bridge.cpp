@@ -11,7 +11,7 @@
 
 
 MCMCsession::MCMCsession(const File &specs) {
-    std::size_t trmid, obsmid, sid;
+    std::size_t trmid, obsmid, mcmc_id;
     bool is_parametrised{false};
     Group simspecs = specs.getGroup(SIMULATION_SPEC_KEY);
     Group modelspecs = specs.getGroup(MODEL_SPEC_KEY);
@@ -20,17 +20,20 @@ MCMCsession::MCMCsession(const File &specs) {
     simspecs.getDataSet("seeds").read(seeds);
     modelspecs.getGroup(TRANSITIONM_KEY).getAttribute("mtype").read(trmid);
     modelspecs.getGroup(OBSERVATIONM_KEY).getAttribute("mtype").read(obsmid);
-    samplerspecs.getAttribute("stype").read(sid);
+    specs.getAttribute("mcmc_id").read(mcmc_id);
 
     if (specs.hasAttribute("parametrised"))
         specs.getAttribute("parametrised").read(is_parametrised);
     ObjectFactory<IMcmc, std::function<std::shared_ptr<IMcmc>(const Group&, const Group&, const Group&)> > factory{};
     if (is_parametrised) {
-        factory.subscribe<MCMC, ParSampler_tlist, ParmMcmcMaker>();
+        if (!factory.subscribe<MCMC, ParSampler_tlist, ParmMcmcMaker>())
+            throw LogicException("MCMC types have non-unique ids.");
     } else {
-        factory.subscribe<MCMC, Sampler_tlist, McmcMaker>();
+        if (!factory.subscribe<MCMC, Sampler_tlist, McmcMaker>())
+            throw LogicException("MCMC types have non-unique ids.");
     }
-    mcmc = factory.create(sid, modelspecs, samplerspecs, simspecs);
+    factory.print();  // only prints in DEBUG mode
+    mcmc = factory.create(mcmc_id, modelspecs, samplerspecs, simspecs);
     create_id(specs.getName());
 }
 

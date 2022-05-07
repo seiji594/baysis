@@ -115,7 +115,7 @@ namespace schemes {
         typedef TrM TrM_type;
         typedef ObsM ObsM_type;
 
-        static std::size_t Id() { return Type * static_cast<std::size_t>(ModelType::size) + TrM::Id() + ObsM::Id(); }
+        static std::size_t Id() { return Type + 100*TrM::Id() + 10*ObsM::Id(); }
 
         SingleStateScheme() = default;
         explicit SingleStateScheme(std::size_t): SingleStateScheme() { }; // <-- for providing conformity with other scheme
@@ -136,6 +136,7 @@ namespace schemes {
         void cache(const TransitionModel &tr_model) override;
 
         Data_type data;
+        std::vector<double> scalings;
 
     private:
         AutoregressiveUpdate<ObsM, RNG> ar_update;
@@ -146,7 +147,6 @@ namespace schemes {
         Matrix scaled_prior_mean;
         Eigen::LLT<Matrix> post_L_init;
         Eigen::LLT<Matrix> post_L;
-        std::vector<double> scalings;
     };
 
 
@@ -163,7 +163,7 @@ namespace schemes {
         typedef TrM TrM_type;
         typedef ObsM ObsM_type;
 
-        static std::size_t Id() { return Type * static_cast<std::size_t>(ModelType::size) + TrM::Id() + ObsM::Id(); }
+        static std::size_t Id() { return Type + 100*TrM::Id() + 10*ObsM::Id(); }
 
         EmbedHmmSchemeND(Index psize, bool flip) : pool_size(psize), noflip(!flip) { }
         explicit EmbedHmmSchemeND(Index psize) : EmbedHmmSchemeND(psize, false) { }
@@ -185,6 +185,7 @@ namespace schemes {
     protected:
         Data_type data;
         Data_type data_rev;
+        std::vector<double> scalings;
 
     private:
         void make_pool(const TrM &trm, const ObsM &obsm, Index t, Index a_cached=0);
@@ -201,7 +202,6 @@ namespace schemes {
         Array pool_ld;  // temp for logdensities when drawing auxiliary variable
         State_type cur_state;
         std::vector<Sample_type> pool;
-        std::vector<double> scalings;
         AutoregressiveUpdate<ObsM, RNG> ar_update;
         RandomSample<RNG, std::uniform_int_distribution<Index> > randint;
     };
@@ -213,6 +213,8 @@ namespace schemes {
         typedef typename BaseScheme::TrM_type TrM_type;
         typedef typename BaseScheme::ObsM_type ObsM_type;
         typedef typename BaseScheme::Rng_type Rng_type;
+
+        static std::size_t Id() { return BaseScheme::Id(); }
 
         template<typename... Args>
         explicit WithParameterUpdate(int npupdates, Args&&... args)

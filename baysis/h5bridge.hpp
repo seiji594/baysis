@@ -9,7 +9,7 @@
 /**
  * TODO: Add to Implementation Notes in the thesis:
  *  - various techniques used: template metaprogramming etc
- *  - reflect that interface C++ - HDF5 - Python are by necessity narrower than just C++
+ *  - reflect that interface C++ - HDF5 - Python are by necessity narrower than just C++: list the allowed combinations of models and parameters
  *  - talk about template bloating and tradeoff between code maintenance and keeping number of instantiated templates
  *  to a minimum; mention techniques (find article about run-time template instantiation) that aim to decrease it but
  *  they are too involved for this project
@@ -62,7 +62,9 @@ using ParLGOS_tlist = crossproduct<ParametrizedModel, LGObservationStationary, D
 using ParLPOS_tlist = crossproductplus<ParametrizedModel, LPObservationStationary, DiagM_tlist, DiagM_tlist, ConstVector>::list;
 using ParGPOS_tlist = typename zip2<ParametrizedModel>::with<GPObservationStationary, Vec_tlist>::list;
 using ParObsm_tlist = typelist::tlist_concat_lists<ParLGOS_tlist, ParLPOS_tlist, ParGPOS_tlist>::type;
-using ParSampler_tlist = zip3<SingleStateScheme, EmbedHmmSchemeND>::withcrossprod<ParTrm_tlist, ParObsm_tlist, std::mt19937>::list;
+using ParSampler_tlist = zip1<WithParameterUpdate>::
+        with<zip3<SingleStateScheme, EmbedHmmSchemeND>::
+                withcrossprod<ParTrm_tlist, ParObsm_tlist, std::mt19937>::list>::list;
 using Filter_tlist = typelist::tlist<schemes::CovarianceScheme, schemes::InformationScheme>;
 using Smoother_tlist = typelist::tlist<schemes::RtsScheme, schemes::TwoFilterScheme>;
 
@@ -94,6 +96,7 @@ std::ostream& operator<<(std::ostream& os, SamplerType stype)
     return os;
 }
 */
+
 template<typename ValueType, typename DataType>
 bool saveResults(File& resfile, const std::string& path_to_ds,
                  const DataType& ds, const std::unordered_map<std::string, int> &attrs={}) {
@@ -208,12 +211,14 @@ std::shared_ptr<typename ModelMaker<LGTransitionStationary>::template PModel<P..
 ModelMaker<LGTransitionStationary>::create(const Group& modelspecs, std::shared_ptr<P>... params) {
     std::size_t length, xdim;
     Vector mean_prior;
+    Matrix cov_prior;
     modelspecs.getAttribute("length").read(length);
     modelspecs.getGroup(TRANSITIONM_KEY).getAttribute("xdim").read(xdim);
-    modelspecs.getDataSet("mu_prior").read(mean_prior);
+    modelspecs.getGroup(TRANSITIONM_KEY).getDataSet("mu_prior").read(mean_prior);
+    modelspecs.getGroup(TRANSITIONM_KEY).getDataSet("S_prior").read(cov_prior);
     auto trm = std::make_shared<PModel<P...> >(std::forward<std::tuple<std::shared_ptr<P>...> >
             (std::make_tuple(params...)), length, xdim);
-    trm->setPrior(mean_prior, Matrix::Identity(xdim, xdim));
+    trm->setPrior(mean_prior, cov_prior);
     return trm;
 }
 
@@ -231,6 +236,10 @@ struct SamplerMaker: CreatorWrapper<ISampler, const Group&> {
     static std::shared_ptr<ISampler> create(const Group &samplerspecs);
 };
 
+struct ParmSamplerMaker {
+    template<typename Derived>
+    static std::shared_ptr<ISampler> create(const Group &samplerspecs);
+};
 
 struct McmcMaker: CreatorWrapper<IMcmc, const Group&, const Group&, const Group&> {
     template<typename Derived>
@@ -283,23 +292,52 @@ std::shared_ptr<ISampler> SamplerMaker::create(const Group &samplerspecs) {
         case SamplerType::ehmm:
             if (samplerspecs.hasAttribute("pool_size")) {
                 std::size_t psize;
-                Attribute pszattr = samplerspecs.getAttribute("pool_size");
-                pszattr.read(psize);
+                samplerspecs.getAttribute("pool_size").read(psize);
 
                 if (samplerspecs.hasAttribute("flip")) {
-                    Attribute flipattr = samplerspecs.getAttribute("flip");
-                    bool flip;
                     // We have both values for initialization
-                    flipattr.read(flip);
+                    bool flip;
+                    samplerspecs.getAttribute("flip").read(flip);
                     return std::make_shared<Derived>(psize, flip);
                 }
                 // Flip variable missing, will use default
                 return std::make_shared<Derived>(psize);
             }
             // Not enough variables to initialise
-            throw LogicException("The specification for Embdedded HMM has to provideto at least pool_size variable.");
+            throw LogicException("The specification for Embdedded HMM has to provide at least pool_size variable.");
     }
 }
+
+
+template<typename Derived>
+std::shared_ptr<ISampler> ParmSamplerMaker::create(const Group &samplerspecs) {
+    int smplrid, npu;
+    samplerspecs.getAttribute("stype").read(smplrid);
+    samplerspecs.getAttribute("num_param_updates").read(npu);
+
+    switch (SamplerType(smplrid)) {
+        case SamplerType::metropolis:
+            // No variables needed for initialisation
+            return std::make_shared<Derived>(npu);
+            case SamplerType::ehmm:
+                if (samplerspecs.hasAttribute("pool_size")) {
+                    std::size_t psize;
+                    samplerspecs.getAttribute("pool_size").read(psize);
+
+                    if (samplerspecs.hasAttribute("flip")) {
+                        // We have both values for initialization
+                        bool flip;
+                        samplerspecs.getAttribute("flip").read(flip);
+                        return std::make_shared<Derived>(npu, psize, flip);
+                    }
+                    // Flip variable missing, will use default
+                    return std::make_shared<Derived>(npu, psize);
+                }
+                // Not enough variables to initialise
+                throw LogicException("The specification for Embdedded HMM has to provide at least pool_size variable.");
+    }
+}
+
 
 template<typename Derived>
 std::shared_ptr<IMcmc> McmcMaker::create(const Group& mspecs,
@@ -321,16 +359,6 @@ std::shared_ptr<IMcmc> McmcMaker::create(const Group& mspecs,
 
     auto trm = LGTS::create(trmspec, length);
 
-//    ObjectFactory<ISampler, std::function<std::shared_ptr<ISampler>(const Group&)> > sampler_factory{};
-//    switch (SamplerType(Derived::Scheme_type::Type)) {
-//        case SamplerType::metropolis:
-//            sampler_factory.subscribe<SingleStateScheme, LGTransitionStationary, Obsm_tlist, std::mt19937, SamplerMaker>();
-//            break;
-//        case SamplerType::ehmm:
-//            sampler_factory.subscribe<EmbedHmmSchemeND, LGTransitionStationary, Obsm_tlist, std::mt19937, SamplerMaker>();
-//    }
-//
-//    auto sampler = std::dynamic_pointer_cast<typename Derived::Scheme_type>(sampler_factory.create(smplrid, smplrspecs));
     auto sampler = std::dynamic_pointer_cast<typename Derived::Scheme_type>
         (SamplerMaker::create<typename Derived::Scheme_type>(smplrspecs));
 
@@ -389,25 +417,16 @@ std::shared_ptr<IMcmc> ParmMcmcMaker::create(const Group &mspecs, const Group &s
     param2->initDiagonal(diag);
     auto trm = ModelMaker<LGTransitionStationary>::create(mspecs, param1, param2);
 
-//    ObjectFactory<ISampler, std::function<std::shared_ptr<ISampler>(const Group&)> > sampler_factory{};
-//
-//    switch (SamplerType(Derived::Scheme_type::Type)) {
-//        case SamplerType::metropolis:
-//            sampler_factory.subscribe<SingleStateScheme, ParTrm_tlist, ParObsm_tlist, std::mt19937, SamplerMaker>();
-//            break;
-//        case SamplerType::ehmm:
-//            sampler_factory.subscribe<EmbedHmmSchemeND, ParTrm_tlist, ParObsm_tlist, std::mt19937, SamplerMaker>();
-//    }
-//
-//    auto sampler = std::dynamic_pointer_cast<typename Derived::Scheme_type>(sampler_factory.create(smplrid, smplrspecs));
+    // Sampler creation
     auto sampler = std::dynamic_pointer_cast<typename Derived::Scheme_type>
-            (SamplerMaker::create<typename Derived::Scheme_type>(smplrspecs));
+            (ParmSamplerMaker::create<typename Derived::Scheme_type>(smplrspecs));
 
     // Observation model creation
+    int model_id = obsmid % 10;
     std::size_t ydim;
     obsmspec.getAttribute("ydim").read(ydim);
 
-    switch (ModelType(obsmid)) {
+    switch (ModelType(model_id)) {
         case ModelType::lingauss:
         {
             std::vector<double> C, R;
