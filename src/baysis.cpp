@@ -1,14 +1,14 @@
 //
-// baysis.cpp
+// src.cpp
 // Baysis
 //
-// Created by Vladimir Sotskov on 27/08/2021, 19:17.
-// Copyright © 2021 Vladimir Sotskov. All rights reserved.
+// Created by Vladimir Sotskov on 07/05/2022, 13:36.
+// Copyright © 2022 Vladimir Sotskov. All rights reserved.
 //
 
 #include <iostream>
-#include "baysis/h5bridge.hpp"
-//#include "baysis/paramgenerators.hpp"
+#include "h5bridge.hpp"
+//#include "src/paramgenerators.hpp"
 
 
 void Launch(const File& file);

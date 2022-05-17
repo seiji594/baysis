@@ -1,5 +1,5 @@
 #
-# utils.py
+# bridge.py
 # Baysis
 #
 # Created by Vladimir Sotskov on 28/08/2021, 12:02.
@@ -290,7 +290,7 @@ class MCMCsession:
 
     def run(self):
         rescode = None
-        with sp.Popen(["../cmake-build-debug/Baysis", self._spec_file_],
+        with sp.Popen(["../bin/Baysis", self._spec_file_],
                       stdout=sp.PIPE, stderr=sp.STDOUT, bufsize=1, universal_newlines=True) as p:
             print("Launched Baysis")
             while True:

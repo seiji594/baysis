@@ -12,11 +12,11 @@
 //#include <unordered_map>
 #include "../baysis/probsupport.hpp"
 #include "../baysis/filterschemes.cpp"
-//#include "../baysis/utilities.hpp"
+//#include "../src/utilities.hpp"
 #include "../baysis/samplingschemes.hpp"
 #include "../baysis/algorithms.hpp"
 #include "../baysis/models.cpp"
-//#include "../baysis/h5bridge.cpp"
+//#include "../src/h5bridge.cpp"
 #include "../baysis/accumulator.cpp"
 #include "../baysis/dataprovider.hpp"
 #include "../baysis/paramgenerators.hpp"
