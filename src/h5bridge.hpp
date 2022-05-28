@@ -127,10 +127,11 @@ private:
 };
 
 struct DataInitialiser {
-    void initialise(const File& specs, const MCMCsession& session);
+    void initialise(const File &specs);
     void provideto(const MCMCsession& session);
     bool saveto(File &file);
 
+    Matrix states;
     Matrix realdata;
     Matrix_int intdata;
 };
@@ -139,6 +140,10 @@ struct DataInitialiser {
 struct SmootherSession {
     explicit SmootherSession(const File& specs);
     std::shared_ptr<ISmoother> kalman;
+    std::string id;
+
+private:
+    void create_id(const std::string &fname);
 };
 
 

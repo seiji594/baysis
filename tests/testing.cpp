@@ -10,16 +10,16 @@
 #include <chrono>
 #include <cxxabi.h>
 //#include <unordered_map>
-#include "../baysis/probsupport.hpp"
-#include "../baysis/filterschemes.cpp"
+#include "../src/probsupport.hpp"
+#include "../src/filterschemes.cpp"
 //#include "../src/utilities.hpp"
-#include "../baysis/samplingschemes.hpp"
-#include "../baysis/algorithms.hpp"
-#include "../baysis/models.cpp"
+#include "../src/samplingschemes.hpp"
+#include "../src/algorithms.hpp"
+#include "../src/models.cpp"
 //#include "../src/h5bridge.cpp"
-#include "../baysis/accumulator.cpp"
-#include "../baysis/dataprovider.hpp"
-#include "../baysis/paramgenerators.hpp"
+#include "../src/accumulator.cpp"
+#include "../src/dataprovider.hpp"
+#include "../src/paramgenerators.hpp"
 
 using namespace std;
 using namespace ssmodels;

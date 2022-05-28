@@ -10,6 +10,18 @@
 #include "h5bridge.hpp"
 
 
+std::string get_idstring(const std::string& fn) {
+    std::string id;
+    std::regex suffix("_?specs?", std::regex_constants::icase);
+    std::regex prefix("(\\.+|~)/(\\w+)/");
+    std::regex ext("\\.h5", std::regex_constants::icase);
+    id = std::regex_replace(fn, suffix, "");
+    id = std::regex_replace(id, prefix, "");
+    id = std::regex_replace(id, ext, "");
+    return id;
+}
+
+
 MCMCsession::MCMCsession(const File &specs) {
     std::size_t trmid, obsmid, mcmc_id;
     bool is_parametrised{false};
@@ -38,12 +50,7 @@ MCMCsession::MCMCsession(const File &specs) {
 }
 
 void MCMCsession::create_id(const std::string &fname) {
-    std::regex suffix("_?specs?", std::regex_constants::icase);
-    std::regex prefix("(\\.+|~)/(\\w+)/");
-    std::regex ext("\\.h5", std::regex_constants::icase);
-    id = std::regex_replace(fname, suffix, "");
-    id = std::regex_replace(id, prefix, "");
-    id = std::regex_replace(id, ext, "");
+    id = get_idstring(fname);
 }
 
 
@@ -54,6 +61,11 @@ SmootherSession::SmootherSession(const File &specs) {
     specs.getGroup("smoother").getAttribute("ftype").read(fid);
     specs.getGroup("smoother").getAttribute("stype").read(sid);
     kalman = factory.create(fid*FILTER_ID_MULT+sid, specs.getGroup("model"));
+    create_id(specs.getName());
+}
+
+void SmootherSession::create_id(const std::string &fname) {
+    id = get_idstring(fname);
 }
 
 
@@ -111,7 +123,6 @@ template<> LPOS::Model_ptr LPOS::create(const Group& modelspecs, std::size_t len
 template<> GPOS::Model_ptr GPOS::create(const Group& modelspecs, std::size_t length) {
     Vector C;
     int mftype;
-    std::size_t ydim = C.rows();
     modelspecs.getDataSet("C").read(C);
     modelspecs.getAttribute("mean_function").read(mftype);
 
@@ -121,6 +132,7 @@ template<> GPOS::Model_ptr GPOS::create(const Group& modelspecs, std::size_t len
             mf = bimodal;
             break;
     }
+    std::size_t ydim = C.rows();
     std::shared_ptr<GPObservationStationary> obsm = std::make_shared<GPObservationStationary>(length, ydim, mf);
     obsm->init(C);
     return obsm;
@@ -145,44 +157,59 @@ std::shared_ptr<IParam> ParamMaker::createConst(const Group &spec) {
 }
 
 
-void DataInitialiser::initialise(const File &specs, const MCMCsession &session) {
+void DataInitialiser::initialise(const File &specs) {
+    std::size_t obsmid;
     Group data = specs.getGroup(DATA_KEY);
-    int mtype;
-    specs.getGroup(std::string(MODEL_SPEC_KEY)+"/"+std::string(OBSERVATIONM_KEY)).getAttribute("mtype").read(mtype);
 
-    if (data.exist("observations")) {
-        std::string dtype;
+    if (data.hasAttribute("dref")) {
+        std::string dtype, dref;
         data.getAttribute("dtype").read(dtype);
+        data.getAttribute("dref").read(dref);
+        File file(std::string(PATH_TO_SPEC)+dref, File::ReadOnly);
+
         if (dtype[0] == 'i') {
-            specs.getDataSet(std::string(DATA_KEY)+"/observations").read(intdata);
+            file.getDataSet("observations").read(intdata);
         } else {
-            specs.getDataSet(std::string(DATA_KEY)+"/observations").read(realdata);
+            file.getDataSet("observations").read(realdata);
         }
     } else {
         // No data provided, need to generate
+        Group modelspecs = specs.getGroup(MODEL_SPEC_KEY);
+        Group trmspec = modelspecs.getGroup(TRANSITIONM_KEY);
+        Group obsmspec = modelspecs.getGroup(OBSERVATIONM_KEY);
+        obsmspec.getAttribute("mtype").read(obsmid);
+        std::size_t length;
         u_long seed;
         data.getAttribute("seed").read(seed);
+        modelspecs.getAttribute("length").read(length);
+        auto trm = LGTS::create(trmspec, length);
 
-        switch (ModelType(mtype)) {
+        switch (ModelType(obsmid)) {
             case ModelType::lingauss:
             {
+                auto obsm = LGOS::create(obsmspec, length);
                 DataGenerator<LGTransitionStationary, LGObservationStationary> dg;
-                dg.generate(session.mcmc->getTransitionModel(), session.mcmc->getObservationModel(), seed);
+                dg.generate(trm, obsm, seed);
                 realdata = dg.getData();
+                states = dg.getStates();
             }
                 break;
             case ModelType::linpoiss:
             {
+                auto obsm = LPOS::create(obsmspec, length);
                 DataGenerator<LGTransitionStationary, LPObservationStationary> dg;
-                dg.generate(session.mcmc->getTransitionModel(), session.mcmc->getObservationModel(), seed);
+                dg.generate(trm, obsm, seed);
                 intdata = dg.getData();
+                states = dg.getStates();
             }
                 break;
             case ModelType::genpoiss:
             {
+                auto obsm = GPOS::create(obsmspec, length);
                 DataGenerator<LGTransitionStationary, GPObservationStationary> dg;
-                dg.generate(session.mcmc->getTransitionModel(), session.mcmc->getObservationModel(), seed);
+                dg.generate(trm, obsm, seed);
                 intdata = dg.getData();
+                states = dg.getStates();
             }
                 break;
             default: throw LogicException("Unknown observation model type");
@@ -201,9 +228,11 @@ void DataInitialiser::provideto(const MCMCsession& session) {
 }
 
 bool DataInitialiser::saveto(File &file) {
+    bool isDataSaved;
     if (intdata.size() != 0) {
-        return saveResults<int>(file, "observations", intdata);
+        isDataSaved = saveResults<int>(file, "observations", intdata);
     } else {
-        return saveResults<double>(file, "observations", realdata);
+        isDataSaved = saveResults<double>(file, "observations", realdata);
     }
+    return isDataSaved & saveResults<double>(file, "states", states);
 }

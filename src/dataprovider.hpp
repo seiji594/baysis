@@ -35,11 +35,13 @@ public:
     Ref<Data_type> next() override;
     Ref<Data_type> at(std::size_t t);
     Sample_type & getData() const;
+    Matrix & getStates() const;
     void reset() { cur_t = 0; }
 
 private:
     bool check_isgenerated() const;
 
+    mutable Matrix states;
     mutable Sample_type observations;
     std::size_t cur_t{0};
     bool generated{false};
@@ -59,11 +61,14 @@ void DataGenerator<TrM, ObsM, RNG>::generate(const std::shared_ptr<ssmodels::Tra
     }
     std::size_t T{trm->length()};
     observations.resize(obm->obsDim(), T);
+    states.resize(trm->stateDim(), T);
     Vector state(static_cast<const TrM &>(*trm).simulate(static_cast<const TrM &>(*trm).getPriorMean(), rng, true));
+    states.col(0) = state;
     observations.col(0) = static_cast<const ObsM &>(*obm).simulate(state, rng);
 
     for (int t = 1; t < T; ++t) {
         state = static_cast<const TrM &>(*trm).simulate(state, rng);
+        states.col(t) = state;
         observations.col(t) = static_cast<const ObsM &>(*obm).simulate(state, rng);
     }
 
@@ -84,6 +89,12 @@ Ref<typename DataGenerator<TrM, ObsM, RNG>::Data_type> DataGenerator<TrM, ObsM, 
     if (t >= observations.cols())
         throw LogicException("Iterator is beyond the last datapoint");
     return observations.col(t);
+}
+
+template<typename TrM, typename ObsM, typename RNG>
+Matrix &DataGenerator<TrM, ObsM, RNG>::getStates() const {
+    check_isgenerated();
+    return states;
 }
 
 template<typename TrM, typename ObsM, typename RNG>
