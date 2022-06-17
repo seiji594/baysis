@@ -172,7 +172,7 @@ namespace schemes {
         void init(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
         void setData(const Matrix &observations) override;
         void setData(const Matrix_int &observations) override;
-        void setScales(const std::vector<double>& scales) override { scalings = scales; }
+        void setScales(const std::vector<double>& scales) override;
         void sample(const TransitionModel &tr_model, const ObservationModel &obs_model) override;
         void reset(u_long seed) override;
 //        void updateIter(int i) {}
@@ -429,6 +429,15 @@ namespace schemes {
 
 
     template<typename TrM, typename ObsM, typename RNG>
+    void EmbedHmmSchemeND<TrM, ObsM, RNG>::setScales(const std::vector<double> &scales) {
+        // Due to the implementation of drawing the scaling factor (see method met_update())
+        // the scales need to be adjusted as so:
+        std::size_t backidx = std::min(scales.size()-1, std::size_t(1));
+        scalings.front() = scales.front();
+        scalings.at(backidx) = scales.at(backidx) - scales.front();
+    }
+
+    template<typename TrM, typename ObsM, typename RNG>
     void EmbedHmmSchemeND<TrM, ObsM, RNG>::setData(const Matrix &observations) {
         data = observations.cast<typename Data_type::Scalar>();
     }
@@ -466,7 +475,7 @@ namespace schemes {
 
     template<typename TrM, typename ObsM, typename RNG>
     bool EmbedHmmSchemeND<TrM, ObsM, RNG>::flip(Index k, int is_odd) {
-        return (((k % 2) == 0) ^ is_odd) && !noflip;
+        return !noflip && (((k % 2) == 0) ^ is_odd);
     }
 
     template<typename TrM, typename ObsM, typename RNG>
@@ -530,7 +539,7 @@ namespace schemes {
         cur_a = a_cached;
 
         for (int k = kt-1; k >= 0 ; --k) {
-            if (flip(k + 1, even)) {
+            if (flip(k + 1, odd)) {
                 pool[k].col(t) = -1 * cur_state;
             } else {
                 met_update(trm, obsm, t);       // Metropolis update
@@ -545,7 +554,7 @@ namespace schemes {
         cur_a = a_cached;
 
         for (int k = kt+1; k < pool_size; ++k) {
-            if (flip(k - 1, odd)) {
+            if (flip(k - 1, even)) {
                 pool[k].col(t) = -1 * cur_state;
             } else {
                 if (t != 0)

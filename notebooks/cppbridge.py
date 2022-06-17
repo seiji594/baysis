@@ -17,6 +17,7 @@ from statsmodels.tools.decorators import cache_readonly
 
 DATA_PATH = Path("../data")
 RESULTS_PATH = Path("../data")
+OUTPUTS_PATH = Path("../..").resolve() / "thesis/resources"
 
 
 @unique
@@ -126,6 +127,9 @@ def hash_model(transitionm, observationm, seqlength):
     return f"{ModelType(transitionm.mtype)}_{ModelType(observationm.mtype)}_{abs(hash(h))}"
 
 
+###
+# Main classes
+###
 class Specification:
     def __init__(self, specname: Enum, **kwargs):
         self._groupname_ = specname.value
@@ -233,19 +237,19 @@ class TransitionSpec(Specification):
         mtype = ModelType.LINEAR_GAUSS.value
         if self.parametrised:
             for i, p in enumerate([mean_coeff, cov]):
-                mtype += pow(10, 2*i + 1) * p.id
+                mtype += pow(10, 2 * i + 1) * p.id
         super().__init__(SpecGroup.TRANSITION_MODEL, mtype=mtype, A=mean_coeff.value, Q=cov.value,
                          xdim=mean_coeff.dim, mu_prior=prior_mean.reshape(-1, 1), S_prior=prior_cov)
 
 
 class ObservationSpec(Specification):
     def __init__(self, model_type: ModelType, mean_coeff: ModelParameter, *params: ModelParameter):
-        pp = [mean_coeff]+list(params)
+        pp = [mean_coeff] + list(params)
         self.parametrised = any([p.parametrized for p in pp])
         mtype = model_type.value
         if self.parametrised:
             for i, p in enumerate(pp):
-                mtype += pow(10, 2*i + 1) * p.id
+                mtype += pow(10, 2 * i + 1) * p.id
         if model_type == ModelType.LINEAR_GAUSS:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=mtype,
                              C=mean_coeff.value, R=params[0].value, ydim=mean_coeff.dim)
@@ -303,14 +307,16 @@ class DataGenerator:
                 om.add2spec(model)
                 data = f.create_group(SpecGroup.DATA.value)
                 data.attrs.create("seed", seed, dtype=int)
-
-    def generate(self):
-        if self.specfile.exists():
+        else:
             with h5py.File(self.specfile, 'r') as f:
                 if 'observations' in f.keys():
-                    print("The data for these models have been generated already.")
                     self.generated = True
-                    return
+
+    def generate(self):
+        if self.generated:
+            print("The data for these models have been generated already.")
+            self.generated = True
+            return
 
         rescode = run_cpp_code("datagen", self.specfile)
 
@@ -350,7 +356,7 @@ class Data(Specification):
         if not self._datafile.exists():
             raise ValueError("The data for this model have not been generated. "
                              "Please use DataGenerator to generate the data first.")
-        with h5py.File(DATA_PATH/data_provider, 'r') as f:
+        with h5py.File(DATA_PATH / data_provider, 'r') as f:
             dtype = str(f['observations'].dtype)
         super().__init__(SpecGroup.DATA, dref=data_provider, dtype=dtype)
         self._modelhash = "_".join(str(data_provider).split("_")[:-1])
@@ -361,12 +367,12 @@ class Data(Specification):
             obm = f['model/observation']
             trmstr = f"Transition model, size {trm.attrs['xdim']}:"
             obmstr = str(ModelType(obm.attrs['mtype'])).capitalize() + f" observation model, size {obm.attrs['ydim']}"
-            print("".join(['#']*50))
+            print("".join(['#'] * 50))
             print(trmstr)
             for attr in trm.keys():
                 print(attr)
                 print(trm[attr][:])
-            print("".join(['#']*50))
+            print("".join(['#'] * 50))
             print(obmstr)
             for attr in obm.keys():
                 print(attr)
@@ -388,7 +394,7 @@ class KalmanSession:
     def init(self, seql: int, transition_model: TransitionSpec, observation_model: ObservationSpec,
              smoother: SmootherSpec, data: Data):
         mhash = hash_model(transition_model, observation_model, seql)
-        if mhash != data._modelhash :
+        if mhash != data._modelhash:
             raise ValueError("The specification of the models is different form the model that generated the data.")
 
         if transition_model.parametrised or observation_model.parametrised:
@@ -445,17 +451,18 @@ class MCMCsession:
     def init(self, sequence_length: int, transition_model: TransitionSpec, observation_model: ObservationSpec,
              sampler: SamplerSpec, simulation_specs: SimulationSpec, data: Data):
         mhash = hash_model(transition_model, observation_model, sequence_length)
-        if mhash != data._modelhash :
+        if mhash != data._modelhash:
             raise ValueError("The specification of the models is different from the model that generated the data.")
 
         with h5py.File(DATA_PATH / self._spec_file_, 'w') as f:
             f.attrs.create("mcmc_id",
-                           sampler.stype + 100*transition_model.mtype + 10*observation_model.mtype,
+                           sampler.stype + 100 * transition_model.mtype + 10 * observation_model.mtype,
                            dtype=int)
             if transition_model.parametrised and observation_model.parametrised:
                 f.attrs.create("parametrised", True, dtype=bool)
                 if sampler.num_param_updates is None:
-                    raise AttributeError("The sampler for parametrized models has to have 'num_param_updates' attribute")
+                    raise AttributeError(
+                        "The sampler for parametrized models has to have 'num_param_updates' attribute")
                 if not hasattr(data, "observations"):
                     raise AttributeError("For parametrised models the observations data has to be provided")
             model = f.create_group("model")
@@ -481,6 +488,9 @@ class MCMCsession:
 
     def hasResults(self):
         return len(self.__get_resultsfiles__()) > 0
+
+    def get_samples(self, burnin):
+        return np.concatenate(list(self.samples.values()))[burnin:]
 
     def __get_results__(self, res_files):
         for seed, rfile in res_files.items():
@@ -522,7 +532,8 @@ class Singleton(type):
 
 class IdChecker(metaclass=Singleton):
     models_map = {ModelType.LINEAR_GAUSS: [ParamType.DIAGONAL_MATRIX, ParamType.SYMMETRIC_MATRIX],
-                  ModelType.LINEAR_POISSON: [ParamType.DIAGONAL_MATRIX, ParamType.DIAGONAL_MATRIX, ParamType.CONST_VECTOR],
+                  ModelType.LINEAR_POISSON: [ParamType.DIAGONAL_MATRIX, ParamType.DIAGONAL_MATRIX,
+                                             ParamType.CONST_VECTOR],
                   ModelType.BIMODAL_POISSON: [ParamType.VECTOR]}
 
     def __init__(self):
@@ -548,7 +559,7 @@ class IdChecker(metaclass=Singleton):
 
         for model, plst in IdChecker.models_map.items():
             for combo in product(*[prms[k] for k in plst]):
-                _id = sum([x[1]*pow(10,i*2+1) for i, x in enumerate(combo)]) + model
+                _id = sum([x[1] * pow(10, i * 2 + 1) for i, x in enumerate(combo)]) + model
                 n = model.name + "<" + ",".join([x[0] for x in combo]) + " >"
                 obms.append((n, _id))
                 if model == ModelType.LINEAR_GAUSS:
@@ -563,7 +574,7 @@ class IdChecker(metaclass=Singleton):
             for mcombo in product(tm, om):
                 names, ids = zip(*mcombo)
                 res.setdefault("Name", []).append(s.name + "<" + ",".join(names) + " >")
-                res.setdefault("Id", []).append(ids[0]*100 + ids[1]*10 + s)
+                res.setdefault("Id", []).append(ids[0] * 100 + ids[1] * 10 + s)
         res = pd.DataFrame(res).set_index("Id")
         return res
 
@@ -577,9 +588,9 @@ class IdChecker(metaclass=Singleton):
             omodel_id = f['model/observation'].attrs['mtype']
 
         tm, om = self.models
-        tmodel_correct = pd.DataFrame({"dummy": 0}, index=pd.MultiIndex.from_tuples(tm))\
+        tmodel_correct = pd.DataFrame({"dummy": 0}, index=pd.MultiIndex.from_tuples(tm)) \
             .reset_index(level=0).drop("dummy", axis=1).to_dict()['level_0'].get(tmodel_id, False)
-        omodel_correct = pd.DataFrame({"dummy": 0}, index=pd.MultiIndex.from_tuples(om))\
+        omodel_correct = pd.DataFrame({"dummy": 0}, index=pd.MultiIndex.from_tuples(om)) \
             .reset_index(level=0).drop("dummy", axis=1).to_dict()['level_0'].get(omodel_id, False)
         mcmc_correct = self.samplers.to_dict()["Name"].get(mcmc_id, False)
 

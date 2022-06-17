@@ -6,21 +6,6 @@
 // Copyright © 2021 Vladimir Sotskov. All rights reserved.
 //
 
-/**
- * TODO: Add to Implementation Notes in the thesis:
- *  - various techniques used: template metaprogramming etc
- *  - reflect that interface C++ - HDF5 - Python are by necessity narrower than just C++: list the allowed combinations of models and parameters
- *  - talk about template bloating and tradeoff between code maintenance and keeping number of instantiated templates
- *  to a minimum; mention techniques (find article about run-time template instantiation) that aim to decrease it but
- *  they are too involved for this project
- *  - talk about difficulties in generalising the code, especially for models: difficult to create unified interface;
- *  mention attempt in Bayes++ but it is narrow in class of attainable models
- *  - reflect on the fact that if parametrised then everything parametrised but could be done that parametrisation
- *  can be chosen for certain params but not others
- *  - propose other ideas to do it: bindings vis pybind or Cython, aso specs could be dumped into JSON or yaml
- *  and read from C++ with immediate instantiation (check if theoretically possible)
- */
-
 #ifndef BAYSIS_H5BRIDGE_HPP
 #define BAYSIS_H5BRIDGE_HPP
 
