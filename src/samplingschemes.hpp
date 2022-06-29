@@ -433,6 +433,7 @@ namespace schemes {
         // Due to the implementation of drawing the scaling factor (see method met_update())
         // the scales need to be adjusted as so:
         std::size_t backidx = std::min(scales.size()-1, std::size_t(1));
+        scalings.resize(scales.size());
         scalings.front() = scales.front();
         scalings.at(backidx) = scales.at(backidx) - scales.front();
     }
@@ -586,17 +587,15 @@ namespace schemes {
     template<typename BaseScheme>
     void WithParameterUpdate<BaseScheme>::init(TransitionModel &tr_model, ObservationModel &obs_model) {
         trm_drivers = static_cast<TrM_type&>(tr_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
-        static_cast<TrM_type &>(tr_model).update(trm_drivers, false);
-        trm_par_update.init(static_cast<TrM_type&>(tr_model), trm_drivers, BaseScheme::cur_sample);
+        static_cast<TrM_type &>(tr_model).update(trm_drivers, true);
 
         obsm_drivers = static_cast<ObsM_type&>(obs_model).reset(std::static_pointer_cast<Rng_type>(BaseScheme::rng));
-        static_cast<ObsM_type &>(obs_model).update(obsm_drivers, false);
-        obsm_par_update.init(static_cast<ObsM_type&>(obs_model), obsm_drivers, BaseScheme::cur_sample, BaseScheme::data);
+        static_cast<ObsM_type &>(obs_model).update(obsm_drivers, true);
 
         std::size_t sz = BaseScheme::scalings.size();
         if (sz > 2) {
             trm_par_update.eps = BaseScheme::scalings.at(2);
-            obsm_par_update.eps = BaseScheme::scalings.at(std::min(std::size_t(2), sz-1));
+            obsm_par_update.eps = BaseScheme::scalings.at(std::max(std::size_t(2), sz-1));
         }
 
         BaseScheme::init(tr_model, obs_model);
@@ -616,6 +615,9 @@ namespace schemes {
     template<typename BaseScheme>
     void WithParameterUpdate<BaseScheme>::sample(TransitionModel &tr_model, ObservationModel &obs_model) {
         BaseScheme::sample(tr_model, obs_model);
+        // Now we need to persist the target logdensities conditional on latest params and just sampled sequence
+        trm_par_update.init(static_cast<TrM_type&>(tr_model), trm_drivers, BaseScheme::cur_sample);
+        obsm_par_update.init(static_cast<ObsM_type&>(obs_model), obsm_drivers, BaseScheme::cur_sample, BaseScheme::data);
 
         for (int i=0; i<num_param_updates; ++i) {
             trm_par_update.template propose(trm_drivers, static_cast<TrM_type&>(tr_model).getParamsL());

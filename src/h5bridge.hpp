@@ -43,7 +43,7 @@ using DiagM_tlist = typename zip1<DiagonalMatrixParam>::with<Param_dists>::list;
 using SymM_tlist = typename zip1<SymmetricMatrixParam>::with<Param_dists>::list;
 using Vec_tlist = typename zip1<VectorParam>::with<Param_dists>::list;
 using ParTrm_tlist = crossproduct<ParametrizedModel, LGTransitionStationary, DiagM_tlist, SymM_tlist>::list;
-using ParLGOS_tlist = crossproduct<ParametrizedModel, LGObservationStationary, DiagM_tlist, SymM_tlist>::list;
+using ParLGOS_tlist = crossproduct<ParametrizedModel, LGObservationStationary, DiagM_tlist, DiagM_tlist>::list;
 using ParLPOS_tlist = crossproductplus<ParametrizedModel, LPObservationStationary, DiagM_tlist, DiagM_tlist, ConstVector>::list;
 using ParGPOS_tlist = typename zip2<ParametrizedModel>::with<GPObservationStationary, Vec_tlist>::list;
 using ParObsm_tlist = typelist::tlist_concat_lists<ParLGOS_tlist, ParLPOS_tlist, ParGPOS_tlist>::type;
@@ -261,6 +261,8 @@ std::shared_ptr<IParam> ParamMaker::create(const std::vector<double>& settings, 
     auto support = std::make_pair(*it, *++it);
     if (!(support.first == 0 && support.second == 0))
         retval->setSupport(support);
+    // Next one is the variance scalar
+    retval->setVarscale(*++it);
     if (++it >= settings.end()) {
         auto msg = std::string("Prior parameters are not supplied for " + Derived::name());
         throw LogicException(msg.data());
@@ -425,12 +427,9 @@ std::shared_ptr<IMcmc> ParmMcmcMaker::create(const Group &mspecs, const Group &s
             obsmspec.getDataSet("R").read(R);
             param_factory.template subscribe<DiagonalMatrixParam, Param_dists, ParamMaker>();
             C_id = static_cast<std::size_t>(C.front());
-            auto obsm_param1 = param_factory.create(C_id, std::vector<double>(++C.begin(), C.end()), ydim);
-            param_factory.template subscribe<SymmetricMatrixParam, Param_dists, ParamMaker>();
             R_id = static_cast<std::size_t>(R.front());
-            double diag = R.back();
-            auto obsm_param2 = param_factory.create(R_id, std::vector<double>(++R.begin(), --R.end()), ydim);
-            obsm_param2->initDiagonal(diag);
+            auto obsm_param1 = param_factory.create(C_id, std::vector<double>(++C.begin(), C.end()), ydim);
+            auto obsm_param2 = param_factory.create(R_id, std::vector<double>(++R.begin(), R.end()), ydim);
             auto obsm = ModelMaker<LGObservationStationary>::create(mspecs, obsm_param1, obsm_param2);
             return std::make_shared<Derived>(trm, obsm, sampler, numiter, scaling, thin, rev);
         }

@@ -61,7 +61,6 @@ namespace ssmodels {
     void LGTransitionStationary::test(const Matrix& A, const Matrix &Cov) {
         setInputM(A);
         LQ.compute(Cov);
-        // TODO: check if this is a correct thing to do
         AutoregressiveStationaryCov prior_cov;
         prior_cov.update(A, Cov);
         LQprior.compute(prior_cov.param);

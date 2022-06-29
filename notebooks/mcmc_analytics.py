@@ -109,8 +109,7 @@ def plot_stattest(test, alpha=0.05, save=None):
 
 def plot_trace(samples, t, d, fitnorm=False, kalman=None, save=None, hbins=50):
     fig = plt.figure(constrained_layout=False, figsize=(18, 6))
-    gs = fig.add_gridspec(nrows=1, ncols=2, left=0.05, right=0.75,
-                          hspace=0.1, wspace=0.2, width_ratios=[3, 2])
+    gs = fig.add_gridspec(nrows=1, ncols=2, wspace=0.2, width_ratios=[3, 2])
     xs = np.array(range(samples[:, t, d].shape[0]))
     ax0 = fig.add_subplot(gs[0])
     ax1 = fig.add_subplot(gs[1])
@@ -133,9 +132,13 @@ def plot_trace(samples, t, d, fitnorm=False, kalman=None, save=None, hbins=50):
     if fitnorm or kalman:
         ax1.legend()
     ax0.set_xmargin(0.01)
-    plt.show()
+    ax0.set_ylabel(f"$x_{{{t},{d}}}$")
+    ax0.set_xlabel("sample index")
+    ax1.set_ylabel("density")
+    ax1.set_xlabel(f"$x_{{{t},{d}}}$")
     if isinstance(save, str):
         plt.savefig(OUTPUTS_PATH / f"{save}_traceplot_{t}-{d}.png", dpi=300, format='png')
+    plt.show()
 
     return retval
 
@@ -152,6 +155,8 @@ def plot_mixing(samples_iter, t, d, save=None):
             ax.scatter(xs, samples_iter[sample][:, t, d], s=0.1, label=sample)
 
     ax.set_xmargin(0.01)
+    ax.set_ylabel(f"$x_{{{t},{d}}}$")
+    ax.set_xlabel("sample index")
     if isinstance(save, str):
         plt.savefig(OUTPUTS_PATH / f"{save}_plotmix_{t}-{d}.png", dpi=300, format='png')
     plt.show()
@@ -185,7 +190,7 @@ def _get_cov(samples):
     s, t, n = samples.shape
     retval = np.empty((t, n, n))
     for t in nb.prange(samples.shape[1]):
-        retval[t] = np.cov(samples[:, t, :])
+        retval[t] = (samples[:, t, :].T @ samples[:, t, :]) / (s - 1)
     return retval
 
 

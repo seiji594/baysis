@@ -22,6 +22,8 @@ struct IParam {
 
     virtual void setPrior(const std::vector<double> &prior_param) { prior = prior_param; }
     virtual void setSupport(const std::pair<double, double>& sprt) { support = sprt; }
+    virtual void setVarscale(const double scalar) { varScale = scalar; }
+    virtual double getVarscale() { return varScale; }
     virtual double logDensity(double) const = 0;
     virtual void update(double) = 0;
     virtual double variance() const = 0;
@@ -39,6 +41,7 @@ protected:
 
     std::vector<double> prior;
     std::pair<double, double> support{std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max()};
+    double varScale{1.};
 };
 
 
@@ -116,10 +119,10 @@ struct ConstMatrix: IParam {
     explicit ConstMatrix(std::size_t shape): ConstMatrix(shape, 1.) { }
 
     template<typename RNG>
-    double initDraw(std::shared_ptr<RNG> rng) { return 0.; }
+    double initDraw(std::shared_ptr<RNG> rng) { return param(0, 0); }
     double logDensity(double x) const override { return 0.; }
     void update(double driver) override { }
-    double variance() const override { return 0.; }
+    double variance() const override { return double(1e-8); }
 
     Matrix param;
 };
@@ -134,10 +137,10 @@ struct ConstVector: IParam {
     explicit ConstVector(std::size_t shape): ConstVector(shape, 1.) { }
 
     template<typename RNG>
-    double initDraw(std::shared_ptr<RNG> rng) { return 0.; }
+    double initDraw(std::shared_ptr<RNG> rng) { return param(0); }
     double logDensity(double x) const override { return 0.; }
     void update(double driver) override { }
-    double variance() const override { return 0.; }
+    double variance() const override { return double(1e-8); }
 
     Vector param;
 };
@@ -212,9 +215,8 @@ double SymmetricMatrixParam<PriorDist>::logDensity(double x) const {
 
 template<typename PriorDist>
 void SymmetricMatrixParam<PriorDist>::update(double driver) {
-    double diagconst = param(0, 0);
     param.setConstant(driver);
-    param.diagonal().setConstant(diagconst);
+    param.diagonal().setConstant(diagonal);
 }
 
 template<typename PriorDist>

@@ -11,6 +11,7 @@ import subprocess as sp
 import numpy as np
 import pandas as pd
 from enum import Enum, IntEnum, unique
+from collections import defaultdict
 from itertools import product
 from pathlib import Path
 from statsmodels.tools.decorators import cache_readonly
@@ -52,16 +53,46 @@ class ModelType(IntEnum):
 
 @unique
 class DistributionType(IntEnum):
-    NORMAL = 1
-    UNIFORM = 2
-    INVGAMMA = 3
-    POISSON = 4
+    def __new__(cls, value, label):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.label = label
+        return obj
+
+    NORMAL = (1, "Normal")
+    UNIFORM = (2, "Uniform")
+    INVGAMMA = (3, "Inverse Gamma")
+    POISSON = (4, "Poisson")
 
     @property
     def nparams(self):
         if self == DistributionType.POISSON:
             return 1
         return 2
+
+    def validate(self, params: tuple, support: tuple = None):
+        if len(params) != self.nparams:
+            raise ValueError(f"The {self.label} distribution must have 2 parameters; {len(params)} were given.")
+        if np.any(np.array(params) <= 0) \
+                and (self == DistributionType.POISSON or self == DistributionType.INVGAMMA):
+            raise ValueError(f"The parameters for {self.label} distribution must be all positive.")
+        if (support is None) and self != DistributionType.NORMAL:
+            raise ValueError(f"The {self.label} distribution specification must include support.")
+        if support is not None:
+            if len(support) != 2:
+                raise ValueError(f"Support should have two values, {len(support)} were given.")
+            elif support[0] >= support[1]:
+                raise ValueError(f"Incorrect support interval: {support[0]} > {support[1]}")
+
+        if self == DistributionType.INVGAMMA:
+            if params[0] <= 2:
+                raise ValueError(f"The first parameter of the Inverse Gamma distribution (alpha) must be greater than 2"
+                                 f" in order for vairance to be finite. Alpha supplied was {params[0]}.")
+            print("Make sure the second parameter of Inverse Gamma distribution is the reciprocal of the scale.")
+
+        if self == DistributionType.UNIFORM:
+            if not np.all(np.array(params) == np.array(support)):
+                raise ValueError(f"The parameters and support for {self.label} must coincide.")
 
 
 @unique
@@ -155,18 +186,22 @@ class ModelParameter:
         self.dim = None
         self._value_ = None
 
-    def parametrize(self, dim: int, distribution: DistributionType, prior: tuple, *args, minx=None, maxx=None):
+    def parametrize(self, dim: int, distribution: DistributionType, prior: tuple, *args, varscale=None, minx=None,
+                    maxx=None):
+        support = None if (minx is None) or (maxx is None) else (minx, maxx)
+        distribution.validate(prior, support)
         if self._type_ == ParamType.SYMMETRIC_MATRIX and len(args) == 0:
             raise AttributeError("Symmetric Matrix parameters must include the value for the main diagonal. "
                                  "This value is fixed and not sampled during the simulation.")
         elif self._type_ != ParamType.SYMMETRIC_MATRIX and len(args) > 0:
             raise AttributeError(f"Extra arguments for {self._type_} not supported.")
-        if distribution == DistributionType.INVGAMMA:
-            print("Make sure the second parameter of Inverse Gamma distribution is the reciprocal of the scale.")
+
         self.parametrized = True
         self.dim = dim
         param_id = self._type_ * 10 + distribution.value
-        self._value_ = [param_id, 0 if minx is None else minx, 0 if maxx is None else maxx] + list(prior) + list(args)
+        eps = 1. if varscale is None else varscale
+        self._value_ = [param_id, 0 if minx is None else minx, 0 if maxx is None else maxx] + [eps] \
+                       + list(prior) + list(args)
 
     @property
     def value(self):
@@ -214,22 +249,29 @@ class VectorParam(ModelParameter):
 
 
 class ConstParam(ModelParameter):
-    def __init__(self, value: np.ndarray):
+    def __init__(self, value: np.ndarray, parametrised=False):
         ptype = ParamType.CONST_VECTOR if value.ndim == 1 \
             else ParamType.CONST_MATRIX if value.ndim == 2 \
             else ValueError(f"Only vector (1-d array) or matrix (2-d array) are allowed. "
                             f"Array with {value.ndim} dimensions was provided.")
         super().__init__(ptype)
-        self.dim = value.ndim
+        self.parametrized = parametrised
+        self.dim = value.shape[-1]
         self._value_ = value
 
     @property
     def value(self):
-        if not self.parametrized and self._type_ == ParamType.CONST_VECTOR:
+        if self.parametrized:
+            return [self._type_, self._value_.flatten()[0]]
+        elif self._type_ == ParamType.CONST_VECTOR:
             return self._value_.reshape(-1, 1)
         else:
             return super().value()
 
+    @property
+    def id(self):
+        return self._type_ * 10
+    
 
 class TransitionSpec(Specification):
     def __init__(self, mean_coeff: ModelParameter, cov: ModelParameter, prior_mean: np.ndarray, prior_cov: np.ndarray):
@@ -255,7 +297,8 @@ class ObservationSpec(Specification):
                              C=mean_coeff.value, R=params[0].value, ydim=mean_coeff.dim)
         elif model_type == ModelType.LINEAR_POISSON:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=mtype,
-                             C=mean_coeff.value, D=params[0].value, controls=params[1].value, ydim=mean_coeff.dim)
+                             C=mean_coeff.value, D=params[0].value, controls=params[1].value,
+                             ydim=mean_coeff.dim, cdim=params[1].dim)
         elif model_type == ModelType.BIMODAL_POISSON:
             super().__init__(SpecGroup.OBSERVATION_MODEL, mtype=mtype,
                              C=mean_coeff.value, mean_function=model_type.mean_function(), ydim=mean_coeff.dim)
@@ -447,12 +490,15 @@ class MCMCsession:
         self.samples = {}
         self.acceptances = {}
         self.durations = {}
+        self.param_samples = {}
+        self.param_acceptances = defaultdict(dict)
 
     def init(self, sequence_length: int, transition_model: TransitionSpec, observation_model: ObservationSpec,
              sampler: SamplerSpec, simulation_specs: SimulationSpec, data: Data):
-        mhash = hash_model(transition_model, observation_model, sequence_length)
-        if mhash != data._modelhash:
-            raise ValueError("The specification of the models is different from the model that generated the data.")
+        if not (transition_model.parametrised or observation_model.parametrised):
+            mhash = hash_model(transition_model, observation_model, sequence_length)
+            if mhash != data._modelhash:
+                raise ValueError("The specification of the models is different from the model that generated the data.")
 
         with h5py.File(DATA_PATH / self._spec_file_, 'w') as f:
             f.attrs.create("mcmc_id",
@@ -463,8 +509,6 @@ class MCMCsession:
                 if sampler.num_param_updates is None:
                     raise AttributeError(
                         "The sampler for parametrized models has to have 'num_param_updates' attribute")
-                if not hasattr(data, "observations"):
-                    raise AttributeError("For parametrised models the observations data has to be provided")
             model = f.create_group("model")
             model.attrs.create("length", sequence_length, dtype=int)
             transition_model.add2spec(model)
@@ -490,7 +534,17 @@ class MCMCsession:
         return len(self.__get_resultsfiles__()) > 0
 
     def get_samples(self, burnin):
-        return np.concatenate(list(self.samples.values()))[burnin:]
+        return np.concatenate([s[burnin:] for _, s in self.samples.items()])
+
+    def get_paramSamples(self, burnin, param_names, forseed=None):
+        if forseed is None:
+            return pd.DataFrame(np.concatenate([s[burnin:] for _, s in self.param_samples.items()]),
+                                columns=param_names)
+        else:
+            try:
+                return pd.DataFrame(self.param_samples[f"seed{forseed}"][burnin:], columns=param_names)
+            except KeyError:
+                raise KeyError(f"No samples for this seed {forseed}")
 
     def __get_results__(self, res_files):
         for seed, rfile in res_files.items():
@@ -502,6 +556,13 @@ class MCMCsession:
                     self.samples[seed] = samples_ds[:].reshape(samples_shape[0], samples_shape[-1], -1)
                     self.durations[seed] = samples_ds.attrs['duration']
                     self.acceptances[seed] = f['accepts'][:]
+                    parsamples_ds = f['par_samples']
+                    if ('trm_par_acceptances' in parsamples_ds.attrs) \
+                            and ('obsm_par_acceptances' in parsamples_ds.attrs):
+                        self.param_samples[seed] = parsamples_ds[:].squeeze(axis=2)
+                        parmacc = dict(trm=parsamples_ds.attrs['trm_par_acceptances'],
+                                       obsm=parsamples_ds.attrs['obsm_par_acceptances'])
+                        self.param_acceptances[seed].update(parmacc)
                     print("Done")
             except FileNotFoundError as fe:
                 print(fe)
@@ -531,7 +592,8 @@ class Singleton(type):
 
 
 class IdChecker(metaclass=Singleton):
-    models_map = {ModelType.LINEAR_GAUSS: [ParamType.DIAGONAL_MATRIX, ParamType.SYMMETRIC_MATRIX],
+    models_map = {"trm": [ParamType.DIAGONAL_MATRIX, ParamType.SYMMETRIC_MATRIX],
+                  ModelType.LINEAR_GAUSS: [ParamType.DIAGONAL_MATRIX, ParamType.DIAGONAL_MATRIX],
                   ModelType.LINEAR_POISSON: [ParamType.DIAGONAL_MATRIX, ParamType.DIAGONAL_MATRIX,
                                              ParamType.CONST_VECTOR],
                   ModelType.BIMODAL_POISSON: [ParamType.VECTOR]}
@@ -558,12 +620,19 @@ class IdChecker(metaclass=Singleton):
         obms = []
 
         for model, plst in IdChecker.models_map.items():
+            if model == "trm":
+                mid = 1
+                mname = ModelType.LINEAR_GAUSS.name
+            else:
+                mid = model
+                mname = model.name
             for combo in product(*[prms[k] for k in plst]):
-                _id = sum([x[1] * pow(10, i * 2 + 1) for i, x in enumerate(combo)]) + model
-                n = model.name + "<" + ",".join([x[0] for x in combo]) + " >"
-                obms.append((n, _id))
-                if model == ModelType.LINEAR_GAUSS:
+                _id = sum([x[1] * pow(10, i * 2 + 1) for i, x in enumerate(combo)]) + mid
+                n = mname + "<" + ",".join([x[0] for x in combo]) + " >"
+                if model == "trm":
                     trms.append((n, _id))
+                else:
+                    obms.append((n, _id))
         return trms, obms
 
     @cache_readonly
@@ -578,7 +647,7 @@ class IdChecker(metaclass=Singleton):
         res = pd.DataFrame(res).set_index("Id")
         return res
 
-    def checkSpecs(self, mcmc_specs: MCMCsession):
+    def checkSpecs(self, mcmc_specs: MCMCsession, verbose=False):
         with h5py.File(DATA_PATH / mcmc_specs._spec_file_, 'r') as f:
             if not f.attrs['parametrised']:
                 print("Check is enabled for parametrised models only")
@@ -594,9 +663,12 @@ class IdChecker(metaclass=Singleton):
             .reset_index(level=0).drop("dummy", axis=1).to_dict()['level_0'].get(omodel_id, False)
         mcmc_correct = self.samplers.to_dict()["Name"].get(mcmc_id, False)
 
+        msg = f"""
+        Transition model is {tmodel_id}: {tmodel_correct}
+        Observation model is {omodel_id}: {omodel_correct}
+        MCMC sampler is {mcmc_id}: {mcmc_correct}"""
         if not (tmodel_correct and omodel_correct and mcmc_correct):
-            msg = f"""Incorrect specification!
-            Transition model is {tmodel_id}: {tmodel_correct}
-            Observation model is {omodel_id}: {omodel_correct}
-            MCMC sampler is {mcmc_id}: {mcmc_correct}"""
-            raise ValueError(msg)
+            raise ValueError(f"Incorrect specification!{msg}")
+        elif verbose:
+            print(msg)
+        return True

@@ -387,7 +387,7 @@ namespace ssmodels
               params(parms) {
         Matrix cov = Matrix::Zero(nParams, nParams);
         static_for(params, [&](auto I, auto& p){
-            cov(I, I) = p->variance();
+            cov(I, I) = p->variance() * p->getVarscale();
         });
         covL.template compute(cov);
     }

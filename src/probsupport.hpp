@@ -253,7 +253,7 @@ public:
  * @tparam RealType - type of the variates, default `double`
  */
 template<class RealType=double>
-class inverse_gamma_distribution: std::gamma_distribution<RealType> {
+class inverse_gamma_distribution: public std::gamma_distribution<RealType> {
 public:
     typedef typename std::gamma_distribution<RealType>::result_type result_type;
     typedef typename std::gamma_distribution<RealType>::param_type param_type;
@@ -300,7 +300,10 @@ public:
      * @return variance
      */
     static inline double variance(const double alpha, const double beta) {
-        return 1 / (beta * beta * pow(alpha-1, 2) * (alpha - 2));
+        if (alpha <= 2) {
+            return std::numeric_limits<double>::max();
+        }
+        return pow(beta * (alpha-1), -2) / (alpha - 2);
     }
 
     /**
@@ -311,10 +314,7 @@ public:
      * @return Natural logarithm of the density for x
      */
     static inline double logDensity(const double x, const double alpha, const double beta) {
-        if (alpha <= 2) {
-            return std::numeric_limits<double>::max();
-        }
-        return -(alpha + 1) * log(x) - 1 / (beta * x);
+        return (-alpha - 1) * log(x) - (1 / (beta * x));
     }
 };
 
@@ -332,7 +332,7 @@ public:
     }
 
     static inline double logDensity(const double x, const double a, const double b) {
-        return -log(b -a);
+        return -log(b - a);
     }
 };
 

@@ -140,17 +140,17 @@ template<> GPOS::Model_ptr GPOS::create(const Group& modelspecs, std::size_t len
 
 
 std::shared_ptr<IParam> ParamMaker::createConst(const Group &spec) {
-    std::size_t ydim;
+    std::size_t cdim;
     std::vector<double> const_spec;
-    spec.getAttribute("ydim").read(ydim);
-    spec.getDataSet("constant").read(const_spec);
+    spec.getAttribute("cdim").read(cdim);
+    spec.getDataSet("controls").read(const_spec);
     auto pt = static_cast<ParamType>(static_cast<int>(const_spec.front()));
 
     switch (pt) {
         case ParamType::constm:
-            return std::make_shared<ConstMatrix>(ydim, const_spec.back());
+            return std::make_shared<ConstMatrix>(cdim, const_spec.back());
         case ParamType::constv:
-            return std::make_shared<ConstVector>(ydim, const_spec.back());
+            return std::make_shared<ConstVector>(cdim, const_spec.back());
         default:
             throw LogicException("Constant parameter can only be a const matrix or a const vector");
     }
