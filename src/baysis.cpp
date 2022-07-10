@@ -53,8 +53,9 @@ void Launch(const File& file) {
         ss << PATH_TO_RESULTS << session.id << "_results_seed" << seed << ".h5";
         std::string resfname = ss.str();
         File rfile(resfname, File::ReadWrite | File::Create | File::Overwrite);
-        std::unordered_map<std::string, int> attributes, pattributes(accumulator.getParametersAcceptances());
+        std::unordered_map<std::string, int> attributes, pattributes;
         attributes.emplace("duration", accumulator.totalDuration());
+        pattributes = accumulator.getParametersAcceptances();
         if (!saveResults<double>(rfile, "samples", accumulator.getSamples(), attributes) ||
                 !saveResults<int>(rfile, "accepts", accumulator.getAcceptances()) ||
                 !saveResults<double>(rfile, "par_samples", accumulator.getParametersSamples(), pattributes)) {

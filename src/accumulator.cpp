@@ -27,6 +27,7 @@ void SampleAccumulator::resize(std::size_t new_sz) {
 
 void SampleAccumulator::reset() {
     accepts.clear();
+    par_accepts.clear();
 }
 
 Vector SampleAccumulator::getSmoothedMeans(std::size_t t) const {

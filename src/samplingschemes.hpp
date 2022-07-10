@@ -432,9 +432,8 @@ namespace schemes {
     void EmbedHmmSchemeND<TrM, ObsM, RNG>::setScales(const std::vector<double> &scales) {
         // Due to the implementation of drawing the scaling factor (see method met_update())
         // the scales need to be adjusted as so:
+        scalings = scales;
         std::size_t backidx = std::min(scales.size()-1, std::size_t(1));
-        scalings.resize(scales.size());
-        scalings.front() = scales.front();
         scalings.at(backidx) = scales.at(backidx) - scales.front();
     }
 

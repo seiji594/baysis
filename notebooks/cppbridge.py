@@ -491,7 +491,12 @@ class MCMCsession:
         self.acceptances = {}
         self.durations = {}
         self.param_samples = {}
-        self.param_acceptances = defaultdict(dict)
+        self.param_acceptances = {}
+        self.nparams = 0
+        if Path(DATA_PATH / self._spec_file_).exists():
+            # We're retrieving results of previously run experiment
+            with h5py.File(DATA_PATH / self._spec_file_, 'r') as f:
+                self.__set_nparams__(f)
 
     def init(self, sequence_length: int, transition_model: TransitionSpec, observation_model: ObservationSpec,
              sampler: SamplerSpec, simulation_specs: SimulationSpec, data: Data):
@@ -506,6 +511,7 @@ class MCMCsession:
                            dtype=int)
             if transition_model.parametrised and observation_model.parametrised:
                 f.attrs.create("parametrised", True, dtype=bool)
+                self.nparams = observation_model
                 if sampler.num_param_updates is None:
                     raise AttributeError(
                         "The sampler for parametrized models has to have 'num_param_updates' attribute")
@@ -516,6 +522,7 @@ class MCMCsession:
             sampler.add2spec(f)
             simulation_specs.add2spec(f)
             data.add2spec(f)
+            self.__set_nparams__(f)
 
     def run(self):
         rescode = run_cpp_code("Baysis", self._spec_file_)
@@ -533,10 +540,10 @@ class MCMCsession:
     def hasResults(self):
         return len(self.__get_resultsfiles__()) > 0
 
-    def get_samples(self, burnin):
+    def getSamples(self, burnin):
         return np.concatenate([s[burnin:] for _, s in self.samples.items()])
 
-    def get_paramSamples(self, burnin, param_names, forseed=None):
+    def getParamSamples(self, burnin, param_names, forseed=None):
         if forseed is None:
             return pd.DataFrame(np.concatenate([s[burnin:] for _, s in self.param_samples.items()]),
                                 columns=param_names)
@@ -556,13 +563,13 @@ class MCMCsession:
                     self.samples[seed] = samples_ds[:].reshape(samples_shape[0], samples_shape[-1], -1)
                     self.durations[seed] = samples_ds.attrs['duration']
                     self.acceptances[seed] = f['accepts'][:]
-                    parsamples_ds = f['par_samples']
-                    if ('trm_par_acceptances' in parsamples_ds.attrs) \
+                    parsamples_ds = f.get('par_samples')
+                    if parsamples_ds and ('trm_par_acceptances' in parsamples_ds.attrs) \
                             and ('obsm_par_acceptances' in parsamples_ds.attrs):
-                        self.param_samples[seed] = parsamples_ds[:].squeeze(axis=2)
+                        self.param_samples[seed] = parsamples_ds[:, :self.nparams].squeeze(axis=2)
                         parmacc = dict(trm=parsamples_ds.attrs['trm_par_acceptances'],
                                        obsm=parsamples_ds.attrs['obsm_par_acceptances'])
-                        self.param_acceptances[seed].update(parmacc)
+                        self.param_acceptances[seed] = parmacc
                     print("Done")
             except FileNotFoundError as fe:
                 print(fe)
@@ -576,6 +583,13 @@ class MCMCsession:
                 key = f.stem.split("_")[-1]
                 fnames[key] = f.name
         return fnames
+
+    def __set_nparams__(self, h5f):
+        if h5f.attrs.get('parametrised', False):
+            self.nparams = 2
+            for _, v in h5f['model/observation'].items():
+                if v[0] != ParamType.CONST_VECTOR and v[0] != ParamType.CONST_MATRIX:
+                    self.nparams += 1
 
 
 ###
