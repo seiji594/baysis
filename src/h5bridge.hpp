@@ -163,7 +163,7 @@ ModelMaker<M>::create(const Group &modelspecs, std::shared_ptr<P> param) {
     modelspecs.getGroup(OBSERVATIONM_KEY).getAttribute("mtype").read(mtype);
     modelspecs.getGroup(OBSERVATIONM_KEY).getAttribute("ydim").read(ydim);
 
-    if (ModelType(mtype) == ModelType::genpoiss) {
+    if (ModelType(mtype%10) == ModelType::genpoiss) {
         int mftype;
         modelspecs.getGroup(OBSERVATIONM_KEY).getAttribute("mean_function").read(mftype);
         GPObservationStationary::MF mf;

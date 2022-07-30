@@ -14,11 +14,13 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from itertools import groupby
 from operator import itemgetter
-from matplotlib.ticker import MultipleLocator, NullLocator
+from matplotlib.ticker import MultipleLocator, NullLocator, FormatStrFormatter
 from scipy.stats import norm, ttest_1samp, kstest, gaussian_kde
 from statsmodels.tsa.stattools import acovf
 from statsmodels.graphics.tsaplots import _prepare_data_corr_plot, _plot_corr
-from cppbridge import MCMCsession, OUTPUTS_PATH
+from cppbridge import MCMCsession, OUTPUTS_PATH, DATA_PATH
+
+plt.rcParams['font.size'] = '16'
 
 
 def ztest(series, mu, cov):
@@ -80,7 +82,7 @@ def getACF(chains, allsamples, lags=None, adjusted=False):
     return gammas
 
 
-def getHDR(sample, bins=50, kde=False):
+def getHDR(sample, alpha=0.05, bins=50, kde=False):
     bars = np.histogram(sample, bins=bins, density=True)
     if kde:
         p = gaussian_kde(sample)(bars[1])
@@ -88,7 +90,7 @@ def getHDR(sample, bins=50, kde=False):
         p = bars[0]
     Z = np.sum(p)
     spx = np.flip(np.sort(p)) / Z
-    crit = spx[np.flatnonzero(np.cumsum(spx) >= 0.95)[0]] * Z
+    crit = spx[np.flatnonzero(np.cumsum(spx) >= (1-alpha))[0]] * Z
     xx = np.flatnonzero(p >= crit)
     ranges = []
     for k, g in groupby(enumerate(xx), lambda x: x[0] - x[1]):
@@ -106,7 +108,7 @@ def getPerformanceSummary(runs):
         mcmc = MCMCsession(run)
         print(f"Loading experiment {run}")
         mcmc.loadResults()
-        with h5py.File(OUTPUTS_PATH / f"{run}_specs.h5", "r") as f:
+        with h5py.File(DATA_PATH / f"{run}_specs.h5", "r") as f:
             reverse = f['simulation'].attrs['reverse']
             niters = f['simulation'].attrs['numiter']
             T = f['model'].attrs['length']
@@ -115,12 +117,12 @@ def getPerformanceSummary(runs):
         print("Calculating performance metrics...", end='\t')
         nsamples = (1 + reverse) * (niters + 1)
         burnin = int(0.1 * nsamples)
-        aclags = nsamples - burnin
+        aclags = nsamples - 1
         samples = mcmc.getSamples(burnin)
         psamples = np.concatenate([s[burnin:, np.newaxis] for _, s in mcmc.param_samples.items()])
-        ac_ehmm = getACF(mcmc.samples, samples, lags=aclags, adjusted=True)
+        ac_ehmm = getACF(mcmc.samples, samples, lags=aclags)
         ac_params = getACF({k: v[:, np.newaxis]
-                            for k, v in mcmc.param_samples.items()}, psamples, lags=aclags, adjusted=True)
+                            for k, v in mcmc.param_samples.items()}, psamples, lags=aclags)
         taus_ehmm = 1 + 2 * np.sum(ac_ehmm, axis=2)
         meantaus_ehmm = np.mean(taus_ehmm)
         taus_params = 1 + 2 * np.sum(ac_params, axis=2)
@@ -161,42 +163,44 @@ def getInferenceSummary(runs, paramsdict):
         print(f"Loading experiment {run}")
         mcmc.loadResults()
         params = paramsdict[run]
-        output[run].update({('True values', k): v for k, v in params})
+        pnames = list(params.keys())
+        output[run].update({(k, 'True values'): v for k, v in params.items()})
         datadict = {}
         print("Retrieving sampling information...", end='\t')
-        with h5py.File(OUTPUTS_PATH / f"{run}_specs.h5", "r") as f:
+        with h5py.File(DATA_PATH / f"{run}_specs.h5", "r") as f:
             reverse = f['simulation'].attrs['reverse']
             niters = f['simulation'].attrs['numiter']
-            scales = f['simulation'].attrs['scaling']
+            scales = f['simulation/scaling'][:]
             scales = scales[2:] if len(scales) > 2 else np.ones(2)
             scales = scales if len(scales) > 1 else np.hstack([scales, scales])
-            for i, k, v in enumerate(f['model/transition'].items()):
-                try:
-                    datadict.setdefault(('Transition model', 'priors'), {}).update({list(params.keys())[i]: v[4:]})
-                except IndexError:
-                    break
-                datadict.setdefault(('Transition model', 'xi'), []).append(np.sqrt(v[3]) * scales[0])
-            for i, k, v in enumerate(f['model/observation'].items()):
-                try:
-                    datadict.setdefault(('Observation model', 'priors'), {}).update({list(params.keys())[i]: v[4:]})
-                except IndexError:
-                    break
-                datadict.setdefault(('Observation model', 'xi'), []).append(np.sqrt(v[3]) * scales[1])
-
+            for i, (k, v) in enumerate(f['model/transition'].items()):
+                if k == 'S_prior' or k == 'mu_prior': continue
+                # try:
+                #     datadict.setdefault(('Transition model', 'priors'), {}).update({list(params.keys())[i]: v[4:]})
+                # except IndexError:
+                #     break
+                datadict.setdefault((pnames[i], r'$\xi$'), []).append(np.sqrt(v[3]) * scales[0])
+            for i, (k, v) in enumerate(f['model/observation'].items()):
+                if k == 'controls': continue
+                # try:
+                #     datadict.setdefault(('Observation model', 'priors'), {}).update({list(params.keys())[i]: v[4:]})
+                # except IndexError:
+                #     break
+                datadict.setdefault((pnames[i+2], r'$\xi$'), []).append(np.sqrt(v[3]) * scales[1])
         nsamples = (1 + reverse) * (niters + 1)
         burnin = int(0.1 * nsamples)
         psamples = mcmc.getParamSamples(burnin, params.keys())
         means = psamples.mean(axis=0).to_dict()
         stds = psamples.std(axis=0).to_dict()
         for pn, ps in psamples.items():
-            datadict[("Inference", f"{pn} mean")] = means[pn]
-            datadict[("Inference", f"{pn} std")] = stds[pn]
-            datadict[("Inference", f"{pn} HDR")] = getHDR(ps, bins=1000, kde=True)
+            datadict[(pn, "Sample mean")] = means[pn]
+            datadict[(pn, "Sample st. dev.")] = stds[pn]
+            datadict[(pn, "95% HDR")] = getHDR(ps, bins=1000, kde=True)
 
         output[run].update(datadict)
         print("Done\n")
 
-    return pd.DataFrame.from_dict(output)
+    return pd.DataFrame.from_dict(output).stack(dropna=False).unstack(1).swaplevel().dropna(how='all', axis=0)
 
 
 #####################
@@ -255,7 +259,7 @@ def plotTrace(samples, t, d, fitnorm=False, kalman=None, save=None, hbins=50):
     ax1.set_ylabel("density")
     ax1.set_xlabel(f"$x_{{{t},{d}}}$")
     if isinstance(save, str):
-        plt.savefig(OUTPUTS_PATH / f"{save}_traceplot_{t}-{d}.png", dpi=300, format='png')
+        plt.savefig(OUTPUTS_PATH / f"{save}_traceplot_{t}-{d}.png", dpi=150, format='png')
     plt.show()
 
     return retval
@@ -276,7 +280,7 @@ def plotMixing(samples_iter, t, d, save=None):
     ax.set_ylabel(f"$x_{{{t},{d}}}$")
     ax.set_xlabel("sample index")
     if isinstance(save, str):
-        plt.savefig(OUTPUTS_PATH / f"{save}_plotmix_{t}-{d}.png", dpi=300, format='png')
+        plt.savefig(OUTPUTS_PATH / f"{save}_plotmix_{t}-{d}.png", dpi=150, format='png')
     plt.show()
 
 
@@ -290,7 +294,7 @@ def plotScatterMatrix(samples, t, save=None):
             m.xaxis.set_major_locator(NullLocator())
             m.yaxis.set_major_locator(NullLocator())
     if isinstance(save, str):
-        plt.savefig(OUTPUTS_PATH / f"{save}_scatterm_time{t}.png", dpi=300, format='png')
+        plt.savefig(OUTPUTS_PATH / f"{save}_scatterm_time{t}.png", dpi=150, format='png')
     plt.show()
 
 
