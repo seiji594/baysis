@@ -6,7 +6,9 @@ Baysis is a CMake project and can be built with cmake:
 >mkdir build\
 >cd build\
 >cmake ../\
->make install
+>cmake --build . --target Baysis -- -j 3\
+>cmake --build . --target Kalman -- -j 3\
+>cmake --build . --target datagen -- -j 3
 
 The `bin` directory contains pre-built binaries for Darwin architecture.
 
