@@ -8,6 +8,8 @@ Baysis is a CMake project and can be built with cmake:
 >cmake ../\
 >make install
 
+The `bin` directory contains pre-built binaries for Darwin architecture.
+
 ### Dependencies
 * Eigen3
 * HDF5 10.7
